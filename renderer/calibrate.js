@@ -9,6 +9,8 @@ const langMenu = document.getElementById('langMenu');
 const opacityLabelEl = document.getElementById('opacityLabel');
 const opacityInput = document.getElementById('opacity');
 const opacityValueEl = document.getElementById('opacityValue');
+const notificationsEnabledInput = document.getElementById('notificationsEnabled');
+const notificationsLabelEl = document.getElementById('notificationsLabel');
 const okBtn = document.getElementById('okBtn');
 const cancelBtn = document.getElementById('cancelBtn');
 
@@ -81,6 +83,7 @@ window.api.onLocaleData((data) => {
   document.title = STR.settingsWindowTitle;
   languageLabelEl.textContent = STR.languageLabel;
   opacityLabelEl.textContent = STR.opacityLabel;
+  notificationsLabelEl.textContent = STR.notificationsToggleLabel;
   okBtn.textContent = STR.ok;
   cancelBtn.textContent = STR.cancel;
   populateLanguages(data.languages, data.lang);
@@ -98,6 +101,8 @@ window.api.onCalibrateInit((data) => {
   opacityInput.max = maxPercent;
   opacityInput.value = Math.round(flipOpacity(data.opacity) * 100);
   opacityValueEl.textContent = `${opacityInput.value}%`;
+
+  notificationsEnabledInput.checked = data.notificationsEnabled !== false;
 });
 
 opacityInput.addEventListener('input', () => {
@@ -108,7 +113,10 @@ opacityInput.addEventListener('input', () => {
 
 function submit() {
   const transparency = parseInt(opacityInput.value, 10) / 100;
-  window.api.submitCalibration({ opacity: flipOpacity(transparency) });
+  window.api.submitCalibration({
+    opacity: flipOpacity(transparency),
+    notificationsEnabled: notificationsEnabledInput.checked,
+  });
 }
 
 okBtn.addEventListener('click', submit);

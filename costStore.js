@@ -8,9 +8,13 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { app } = require('electron');
 
 const COSTS_LOG_PATH = path.join(os.homedir(), '.claude', 'metrics', 'costs.jsonl');
-const CACHE_PATH = path.join(__dirname, 'cost_cache.json');
+// __dirname은 설치된 앱에서는 읽기 전용 app.asar 내부를 가리키므로 쓸 수 없다 -
+// 반드시 Electron의 실제 쓰기 가능한 사용자 데이터 폴더를 써야 한다.
+const DATA_DIR = app.getPath('userData');
+const CACHE_PATH = path.join(DATA_DIR, 'cost_cache.json');
 const RETENTION_SECONDS = 8 * 86400; // 8일치만 보관 (주간=7일 롤링 + 여유 1일)
 
 let state = null;
@@ -34,6 +38,7 @@ function loadState() {
 
 function saveState() {
   try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(CACHE_PATH, JSON.stringify(state));
   } catch {
     // 다음 폴링에서 재시도

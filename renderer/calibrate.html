@@ -81,6 +81,8 @@
   .opacity-row { display: flex; align-items: center; gap: 10px; }
   input[type="range"] { width: auto; flex: 1; padding: 0; accent-color: #3a7afe; }
   .opacity-value { width: 38px; text-align: right; font-size: 12px; color: #e6e6e6; flex: none; }
+  .toggle-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #e6e6e6; margin: 0; cursor: pointer; }
+  .toggle-row input[type="checkbox"] { width: 14px; height: 14px; margin: 0; flex: none; accent-color: #3a7afe; }
 </style>
 </head>
 <body>
@@ -101,6 +103,12 @@
       <input id="opacity" type="range" min="20" max="80" step="1" />
       <span class="opacity-value" id="opacityValue">80%</span>
     </div>
+  </div>
+  <div class="field">
+    <label class="toggle-row" for="notificationsEnabled">
+      <input type="checkbox" id="notificationsEnabled" />
+      <span id="notificationsLabel">사용량 알림 (50%, 75%, 90%)</span>
+    </label>
   </div>
   <div class="buttons">
     <button id="cancelBtn">취소</button>

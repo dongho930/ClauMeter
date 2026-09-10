@@ -9,26 +9,29 @@ Claude Code의 5시간/주간 사용량 한도를 실시간으로 보여주는 W
 
 ## 설치 (사용자용)
 
-1. [Releases](../../releases)에서 최신 `클로미터-Setup.exe`를 내려받아 실행합니다.
-2. 설치 후 처음 실행하면 위젯이 화면 하단에 뜹니다. Claude Code 터미널 세션을 사용하기 전까지는 "데이터 없음"으로 보이는 게 정상입니다.
-3. 실측 사용률을 받아오려면 아래 **statusLine 훅 등록**을 한 번 해줘야 합니다.
+1. [Releases](../../releases)에서 최신 `ClauMeter Setup.exe`를 내려받아 실행합니다.
+2. 설치 후 처음 실행하면 위젯이 화면 하단에 뜨고, `~/.claude/settings.json`의 statusLine 훅이 **자동으로 등록**됩니다
+   (아래 참고). 이후 Claude Code 터미널을 한 번 열어서 아무 메시지나 보내면 위젯에 실제 수치가 뜨기 시작합니다.
+   그 전까지는 "데이터 없음"으로 보이는 게 정상입니다.
 
-### statusLine 훅 등록 (필수)
+### statusLine 훅 (자동 등록)
 
-클로미터는 Claude Code 터미널이 상태줄을 그릴 때 남기는 실측값을 읽습니다. `~/.claude/settings.json`을 열어
-`statusLine` 항목에 아래처럼 등록하세요 (설치 경로는 실제 설치 위치에 맞게 바꿔주세요 - 기본값은
-`%LOCALAPPDATA%\Programs\클로미터\resources\app.asar.unpacked\statuslineBridge.js`입니다):
+클로미터는 Claude Code 터미널이 상태줄을 그릴 때 남기는 실측값을 읽습니다. 이 훅은 앱을 실행할 때마다
+자동으로 `~/.claude/settings.json`에 등록/최신화됩니다 - 사용자명이나 설치 위치(현재 사용자용/모든 사용자용/
+커스텀 경로)가 달라도, 이름 변경이나 재설치로 경로가 바뀌어도 그때그때 다시 맞춰줍니다. 이미 `statusLine`을
+다른 용도로 쓰고 있다면(클로미터가 등록한 값이 아니면) 덮어쓰지 않고 그대로 둡니다.
+
+자동 등록이 실패했거나(권한 문제 등) 수동으로 확인하고 싶다면 `~/.claude/settings.json`에 아래처럼 직접
+등록할 수 있습니다 (경로는 실제 설치 위치에 맞게 바꿔주세요):
 
 ```json
 {
   "statusLine": {
     "type": "command",
-    "command": "node \"C:\\Users\\<사용자명>\\AppData\\Local\\Programs\\클로미터\\resources\\app.asar.unpacked\\statuslineBridge.js\""
+    "command": "node \"C:\\Users\\<사용자명>\\AppData\\Local\\Programs\\ClauMeter\\resources\\app.asar.unpacked\\statuslineBridge.js\""
   }
 }
 ```
-
-등록 후 Claude Code 터미널을 한 번 열어서 아무 메시지나 보내면 위젯에 실제 수치가 뜨기 시작합니다.
 
 ## 개발자용
 

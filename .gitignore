@@ -11,3 +11,5 @@ generate-icons.log
 # proxy-server 쪽 로컬 환경변수 (실제 Groq 키가 들어감)
 proxy-server/.env
 proxy-server/.vercel/
+
+.vercel

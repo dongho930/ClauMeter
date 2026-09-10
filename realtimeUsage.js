@@ -6,8 +6,12 @@
 // main.js가 "데이터 없음"으로 표시하게 한다.
 const fs = require('fs');
 const path = require('path');
+const { app } = require('electron');
 
-const REALTIME_PATH = path.join(__dirname, 'realtime_usage.json');
+// __dirname은 설치된 앱에서는 읽기 전용 app.asar 내부를 가리키므로, statuslineBridge.js(asar 밖에서
+// 독립 실행되는 Node 프로세스)가 실제로 쓰는 폴더(app.getPath('userData'))와 어긋난다. 반드시 같은
+// 실제 폴더를 가리켜야 하며, 이 경로를 바꾸면 statuslineBridge.js도 같이 맞춰야 한다.
+const REALTIME_PATH = path.join(app.getPath('userData'), 'realtime_usage.json');
 
 function read() {
   let raw;

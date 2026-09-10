@@ -13,8 +13,15 @@
 // 깨지기 때문에, 무슨 일이 있어도 표준출력에 뭔가는 찍어야 한다.
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
-const OUT_PATH = path.join(__dirname, 'realtime_usage.json');
+// 이 스크립트는 Electron 밖에서 순수 Node로 실행되므로 app.getPath('userData')를 쓸 수 없다.
+// main.js 쪽 realtimeUsage.js가 읽는 폴더와 반드시 일치해야 하므로, Electron이 Windows에서 쓰는
+// 기본 규칙(%APPDATA%\<package.json name>)을 그대로 재현한다. package.json의 "name"이 바뀌면
+// 여기 APP_NAME도 같이 바꿔야 한다.
+const APP_NAME = 'claumeter';
+const USER_DATA_DIR = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), APP_NAME);
+const OUT_PATH = path.join(USER_DATA_DIR, 'realtime_usage.json');
 
 function pick(entry) {
   if (!entry || typeof entry.used_percentage !== 'number' || typeof entry.resets_at !== 'number') return null;
@@ -31,6 +38,7 @@ try {
     fiveHour: pick(rl.five_hour),
     weekly: pick(rl.seven_day),
   };
+  fs.mkdirSync(USER_DATA_DIR, { recursive: true });
   fs.writeFileSync(OUT_PATH, JSON.stringify(out));
 
   const parts = [];

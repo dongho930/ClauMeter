@@ -1,5 +1,7 @@
-const { app, BrowserWindow, Menu, screen, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, screen, ipcMain, Notification } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 
 const costStore = require('./costStore');
 const configStore = require('./configStore');
@@ -10,9 +12,13 @@ const { LOCALES, SUPPORTED_LANGUAGES, LANGUAGE_NAME_EN, DEFAULT_LANGUAGE, t } = 
 // 일부 환경(하드웨어 가속/샌드박스 제한)에서 GPU 프로세스가 죽는 문제를 피하기 위한 안전장치
 app.disableHardwareAcceleration();
 
+// Windows 토스트 알림에 "Electron" 대신 이 앱의 이름/아이콘이 뜨도록 등록한다 (package.json의 appId와 동일해야 함).
+app.setAppUserModelId('com.claumeter.app');
+
 const POLL_INTERVAL_MS = 1_000;
 const WEEK_MS = 7 * 86400 * 1000;
 const FIVE_HOUR_MS = 5 * 3600 * 1000;
+const NOTIFY_THRESHOLDS = [50, 75, 90];
 
 const WIDGET_WIDTH = 340;
 const WIDGET_HEIGHT = 160;
@@ -65,13 +71,11 @@ function broadcastClickThroughState() {
   }
 }
 
-// cfg.language가 지원 언어면 그대로 쓰고, 아니면(최초 실행 등) OS 로케일에서 추정한다.
-// 지원하지 않는 로케일이면 DEFAULT_LANGUAGE로 폴백 - 특정 나라 사용자 쪽으로 치우치지 않도록 영어를 기본값으로 둔다.
+// cfg.language가 지원 언어면 그대로 쓰고, 아니면(최초 실행 등) 항상 DEFAULT_LANGUAGE(영어)로 시작한다 -
+// OS 로케일로 자동 추정하지 않는다. 사용자가 설정 창에서 언어를 고르면 그 값이 cfg.language에
+// 저장되어 이후에도 계속 그 언어로 유지된다.
 function resolveLanguage() {
   if (cfg.language && LOCALES[cfg.language]) return cfg.language;
-  const osLocale = (app.getLocale && app.getLocale()) || '';
-  const prefix = osLocale.split(/[-_]/)[0].toLowerCase();
-  if (LOCALES[prefix]) return prefix;
   return DEFAULT_LANGUAGE;
 }
 
@@ -216,6 +220,52 @@ function computePercents() {
         : null,
     updatedAt: Date.now(),
   };
+}
+
+function ensureNotifiedThresholdsState() {
+  if (!cfg.notifiedThresholds) {
+    cfg.notifiedThresholds = {
+      fiveHour: { resetAt: null, fired: [] },
+      weekly: { resetAt: null, fired: [] },
+    };
+  }
+  return cfg.notifiedThresholds;
+}
+
+function sendUsageNotification(body) {
+  if (!Notification.isSupported()) return;
+  new Notification({ title: L('appTitle'), body, icon: ICON_PATH }).show();
+}
+
+// 5시간/주간 사용률이 50/75/90%를 막 넘었을 때 한 번씩 토스트 알림을 띄운다. "이미 울린 임계값"은
+// cfg.notifiedThresholds에 구간(resetAt) 단위로 저장해두므로, 앱을 껐다 켜도 같은 구간 안에서는
+// 중복 알림이 뜨지 않는다. 구간이 끝나고 새 구간이 시작되면(resetAt 변경) 자동으로 초기화된다.
+function checkUsageThresholds(p) {
+  if (!cfg.notificationsEnabled) return;
+  const state = ensureNotifiedThresholdsState();
+  let changed = false;
+
+  function checkOne(hasData, pct, resetAt, kind, bodyKey) {
+    if (!hasData || pct == null || resetAt == null) return;
+    const entry = state[kind];
+    if (entry.resetAt !== resetAt) {
+      entry.resetAt = resetAt;
+      entry.fired = [];
+      changed = true;
+    }
+    for (const threshold of NOTIFY_THRESHOLDS) {
+      if (pct >= threshold && !entry.fired.includes(threshold)) {
+        entry.fired.push(threshold);
+        changed = true;
+        sendUsageNotification(L(bodyKey, { pct: threshold }));
+      }
+    }
+  }
+
+  checkOne(p.fiveHourHasData, p.fiveHourPct, cfg.fiveHourResetAt, 'fiveHour', 'notifyFiveHourBody');
+  checkOne(p.weeklyHasData, p.weeklyPct, cfg.weekResetAt, 'weekly', 'notifyWeeklyBody');
+
+  if (changed) configStore.saveConfig(cfg);
 }
 
 function formatHM(ms) {
@@ -415,7 +465,8 @@ function openDetailWindow() {
     maximizable: false,
     alwaysOnTop: true,
     center: true,
-    parent: mainWindow || undefined,
+    // parent를 mainWindow(focusable:false)로 두면 Windows에서 이 자식 창을 닫을 때 오너 창까지
+    // 같이 닫혀버리는 문제가 있어서 일부러 독립 창으로 둔다.
     title: L('detailWindowTitle'),
     icon: ICON_PATH,
     webPreferences: {
@@ -435,8 +486,10 @@ function openDetailWindow() {
 }
 
 function pushUsageUpdate() {
+  const percents = computePercents();
+  checkUsageThresholds(percents);
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.webContents.send('usage-update', computePercents());
+  mainWindow.webContents.send('usage-update', percents);
 }
 
 function startPolling() {
@@ -469,7 +522,7 @@ function buildContextMenu() {
       },
     },
     { type: 'separator' },
-    { label: L('menuQuit'), click: () => app.quit() },
+    { label: L('menuQuit'), click: () => app.exit(0) },
   ]);
 }
 
@@ -551,6 +604,7 @@ function openCalibrateWindow() {
     maxOpacity: MAX_OPACITY,
     lang: resolveLanguage(),
     languages: SUPPORTED_LANGUAGES,
+    notificationsEnabled: cfg.notificationsEnabled !== false,
   };
   const opacityBeforeEdit = getConfiguredOpacity();
 
@@ -564,8 +618,9 @@ function openCalibrateWindow() {
     maximizable: false,
     alwaysOnTop: true,
     center: true,
-    parent: mainWindow || undefined,
-    modal: !!mainWindow,
+    // parent/modal을 mainWindow(focusable:false)에 걸면 Windows에서 이 창을 닫을 때(OK/취소)
+    // 오너 창까지 같이 닫혀버리는 문제가 있어서 일부러 독립 창으로 둔다. 어차피 mainWindow는
+    // focusable:false라 modal로 막을 상호작용도 없었다.
     title: L('settingsWindowTitle'),
     icon: ICON_PATH,
     webPreferences: {
@@ -594,8 +649,9 @@ function openCalibrateWindow() {
     settled = true;
     if (typeof data.opacity === 'number' && !Number.isNaN(data.opacity)) {
       cfg.windowOpacity = clamp(data.opacity, MIN_OPACITY, MAX_OPACITY);
-      configStore.saveConfig(cfg);
     }
+    cfg.notificationsEnabled = !!data.notificationsEnabled;
+    configStore.saveConfig(cfg);
     win.close();
     if (mainWindow) mainWindow.setOpacity(getConfiguredOpacity());
   }
@@ -642,9 +698,49 @@ function backfillUsageModelIfNeeded() {
   );
 }
 
+const STATUSLINE_MARKER = 'statuslineBridge.js';
+
+// Claude Code의 statusLine 훅 경로는 사용자명뿐 아니라 설치 위치(현재 사용자용/모든 사용자용/커스텀 경로)에
+// 따라서도 달라지고, 이름 변경이나 재설치로도 바뀔 수 있다. 매번 손으로 등록/수정하게 두는 대신, 패키징된
+// 설치본이 실행될 때마다 process.resourcesPath(이 설치본의 실제 경로)를 기준으로 ~/.claude/settings.json의
+// statusLine을 자동으로 맞춰준다. 사용자가 이미 다른 용도로 statusLine을 쓰고 있으면(우리가 등록한 값이
+// 아니면) 절대 덮어쓰지 않는다 - Claude Code는 statusLine을 하나만 지원하기 때문.
+function ensureStatusLineHook() {
+  if (!app.isPackaged) return;
+  try {
+    const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+    const bridgePath = path.join(process.resourcesPath, 'app.asar.unpacked', 'statuslineBridge.js');
+    const expectedCommand = `node "${bridgePath}"`;
+
+    let settings = {};
+    try {
+      settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+    } catch {
+      settings = {};
+    }
+
+    const current = settings.statusLine;
+    const isMissing = !current || typeof current.command !== 'string';
+    const isOurs = !isMissing && current.command.includes(STATUSLINE_MARKER);
+
+    if (!isMissing && !isOurs) return; // 사용자가 다른 용도로 쓰고 있음 - 건드리지 않음
+    if (!isMissing && current.command === expectedCommand) return; // 이미 최신 상태
+
+    settings.statusLine = { type: 'command', command: expectedCommand };
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+    sendUsageNotification(L('notifyStatusLineHookSet'));
+  } catch {
+    // 자동 등록에 실패해도 README의 수동 등록 안내로 대체할 수 있으니 조용히 넘어간다.
+  }
+}
+
 ipcMain.on('open-detail-window', () => openDetailWindow());
 ipcMain.on('open-calibrate-window', () => openCalibrateWindow());
-ipcMain.on('quit-app', () => app.quit());
+// app.quit()은 창을 하나씩 정상적으로 닫아보는 방식인데, 그 과정에서 GPU/유틸리티 프로세스가
+// 완전히 정리되지 않고 작업관리자에 좀비 프로세스로 남는 경우가 있어서 app.exit()으로 즉시
+// 강제 종료한다. 설정은 바뀔 때마다 바로바로 저장되므로 종료 시 따로 정리할 미저장 데이터가 없다.
+ipcMain.on('quit-app', () => app.exit(0));
 ipcMain.handle('get-usage-advice', (_event, opts) => fetchUsageAdvice(!!(opts && opts.forceRefresh)));
 
 // 언어는 OK/취소 흐름과 별개로 선택 즉시 적용된다(투명도 미리보기와 달리 취소해도 되돌리지 않음) -
@@ -674,10 +770,11 @@ ipcMain.on('clickthrough:hover', (_event, hovering) => {
 // 설정 창을 강제로 띄우지 않고 바로 위젯을 보여주며, 실측값이 아직 없으면 "데이터 없음"으로 표시된다.
 // (설정 ⚙ 버튼으로 여전히 수동 보정은 가능하다.)
 app.whenReady().then(() => {
+  ensureStatusLineHook();
   backfillUsageModelIfNeeded();
   createMainWindow();
 });
 
 app.on('window-all-closed', () => {
-  app.quit();
+  app.exit(0);
 });

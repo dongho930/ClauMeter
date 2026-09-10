@@ -8,8 +8,12 @@
 
 const fs = require('fs');
 const path = require('path');
+const { app } = require('electron');
 
-const MODEL_PATH = path.join(__dirname, 'usage_model.json');
+// __dirname은 설치된 앱에서는 읽기 전용 app.asar 내부를 가리키므로 쓸 수 없다 -
+// 반드시 Electron의 실제 쓰기 가능한 사용자 데이터 폴더를 써야 한다.
+const DATA_DIR = app.getPath('userData');
+const MODEL_PATH = path.join(DATA_DIR, 'usage_model.json');
 const BUCKET_COUNT = 101; // 경과율 0% ~ 100%, 1% 단위
 // 1구간만 쌓여도 모델을 켠다 - predictFromState의 신뢰도 블렌딩(표본이 적으면 단순가정 쪽으로
 // 자동으로 끌어당김)이 데이터 부족 시 과신을 막아주므로, 굳이 여러 구간을 기다릴 필요가 없다.
@@ -45,6 +49,7 @@ function loadState() {
 
 function saveState() {
   try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(MODEL_PATH, JSON.stringify(state));
   } catch {
     // 다음 저장 시점에 재시도

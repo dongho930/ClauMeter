@@ -1,7 +1,11 @@
 const fs = require('fs');
 const path = require('path');
+const { app } = require('electron');
 
-const CONFIG_PATH = path.join(__dirname, 'config.json');
+// __dirname은 설치된 앱에서는 읽기 전용 app.asar 내부를 가리키므로 쓸 수 없다 -
+// 반드시 Electron의 실제 쓰기 가능한 사용자 데이터 폴더를 써야 한다.
+const DATA_DIR = app.getPath('userData');
+const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
 
 const DEFAULT_CONFIG = {
   usageModelBackfilledAt: null, // 과거 기록으로 개인화 모델을 백필한 시각 - 재실행마다 중복 학습되지 않도록 한 번만 실행
@@ -13,6 +17,10 @@ const DEFAULT_CONFIG = {
   windowOpacity: null, // 사용자가 설정 화면에서 직접 조절한 위젯 투명도(0.2~0.8). null이면 기본값 사용
   autostart: false,
   language: null, // 'ko'/'en'/'es'/'fr'/'de'/'pt' 중 하나. null이면 OS 로케일로 자동 추정
+  notificationsEnabled: true, // 5시간/주간 한도 50%/75%/90% 도달 시 토스트 알림
+  // 구간별로 이미 알림을 울린 임계값 - { fiveHour: {resetAt, fired: [50,75]}, weekly: {...} }.
+  // config.json에 저장해두므로 앱을 껐다 켜도 같은 구간 안에서는 중복 알림이 뜨지 않는다.
+  notifiedThresholds: null,
 };
 
 function loadConfig() {
@@ -25,6 +33,7 @@ function loadConfig() {
 }
 
 function saveConfig(cfg) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf-8');
 }
 
