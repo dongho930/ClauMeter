@@ -1,0 +1,3 @@
+# cmd.exe는 LF 줄바꿈 배치 파일을 일부 상황에서 잘못 해석하므로, 어떤 환경에서 체크아웃해도 CRLF로 유지한다.
+*.cmd text eol=crlf
+*.bat text eol=crlf

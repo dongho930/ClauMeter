@@ -1,7 +1,8 @@
-const { app, BrowserWindow, Menu, screen, ipcMain, Notification } = require('electron');
+const { app, BrowserWindow, Menu, screen, ipcMain, Notification, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { execFileSync } = require('child_process');
 
 const costStore = require('./costStore');
 const configStore = require('./configStore');
@@ -13,7 +14,8 @@ const { LOCALES, SUPPORTED_LANGUAGES, LANGUAGE_NAME_EN, DEFAULT_LANGUAGE, t } = 
 app.disableHardwareAcceleration();
 
 // Windows 토스트 알림에 "Electron" 대신 이 앱의 이름/아이콘이 뜨도록 등록한다 (package.json의 appId와 동일해야 함).
-app.setAppUserModelId('com.claumeter.app');
+// Windows 전용 API라서 다른 OS에서는 호출하지 않는다 (macOS 알림은 앱 번들의 이름/아이콘을 쓴다).
+if (process.platform === 'win32') app.setAppUserModelId('com.claumeter.app');
 
 const POLL_INTERVAL_MS = 1_000;
 const WEEK_MS = 7 * 86400 * 1000;
@@ -509,11 +511,12 @@ function buildContextMenu() {
       click: (menuItem) => {
         const enabled = menuItem.checked;
         try {
-          app.setLoginItemSettings({
-            openAtLogin: enabled,
-            path: process.execPath,
-            args: [app.getAppPath()],
-          });
+          // path/args는 Windows 전용 옵션이다. macOS는 앱 번들 자체를 로그인 항목으로 등록하므로 openAtLogin만 넘긴다.
+          app.setLoginItemSettings(
+            process.platform === 'win32'
+              ? { openAtLogin: enabled, path: process.execPath, args: [app.getAppPath()] }
+              : { openAtLogin: enabled }
+          );
           cfg.autostart = enabled;
           configStore.saveConfig(cfg);
         } catch {
@@ -527,10 +530,10 @@ function buildContextMenu() {
 }
 
 function createMainWindow() {
-  const primary = screen.getPrimaryDisplay();
-  const { width: screenW, height: screenH } = primary.workAreaSize;
-  const x = cfg.windowX != null ? cfg.windowX : Math.round((screenW - WIDGET_WIDTH) / 2);
-  const y = cfg.windowY != null ? cfg.windowY : screenH - WIDGET_HEIGHT - BOTTOM_MARGIN;
+  // workArea의 x/y까지 더해야 macOS 상단 메뉴 막대(또는 Windows에서 위/왼쪽에 둔 작업표시줄)만큼 어긋나지 않는다.
+  const { workArea } = screen.getPrimaryDisplay();
+  const x = cfg.windowX != null ? cfg.windowX : workArea.x + Math.round((workArea.width - WIDGET_WIDTH) / 2);
+  const y = cfg.windowY != null ? cfg.windowY : workArea.y + workArea.height - WIDGET_HEIGHT - BOTTOM_MARGIN;
 
   mainWindow = new BrowserWindow({
     width: WIDGET_WIDTH,
@@ -555,6 +558,12 @@ function createMainWindow() {
   });
 
   mainWindow.setAlwaysOnTop(true, 'screen-saver');
+  // macOS: 데스크톱(Spaces)을 옮기거나 다른 앱을 전체 화면으로 띄워도 위젯이 계속 보이게 한다. Dock 아이콘은
+  // Info.plist의 LSUIElement(개발 모드에선 app.dock.hide())로 이미 숨겨져 있으므로 프로세스 타입 전환은 건너뛴다 -
+  // 전환하면 숨겨둔 Dock 아이콘이 다시 나타난다.
+  if (process.platform === 'darwin') {
+    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
+  }
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   mainWindow.webContents.on('did-finish-load', () => sendLocale(mainWindow));
 
@@ -698,7 +707,60 @@ function backfillUsageModelIfNeeded() {
   );
 }
 
-const STATUSLINE_MARKER = 'statuslineBridge.js';
+// statusLine에 등록된 명령이 클로미터 것인지 판별하는 표식. 1.0.0은 `node "...statuslineBridge.js"`를,
+// 지금 Windows 버전은 claumeter-statusline.cmd를 등록하므로 둘 다 우리 것으로 보고 새 명령으로 교체한다.
+const STATUSLINE_MARKERS = ['statuslineBridge.js', 'claumeter-statusline.cmd'];
+
+// 따옴표 없이 명령으로 써도 Git Bash와 PowerShell 양쪽에서 한 덩어리 경로로 해석되는 문자만 허용한다.
+const SHELL_SAFE_PATH = /^[\p{L}\p{N}_.~/:+-]+$/u;
+
+// Node.js 설치 없이 동작하도록 클로미터 실행 파일을 ELECTRON_RUN_AS_NODE=1로 띄워 브리지를 실행하는 명령을 만든다.
+function buildStatusLineCommand() {
+  const unpackedDir = path.join(process.resourcesPath, 'app.asar.unpacked');
+  if (process.platform === 'win32') {
+    return windowsStatusLineCommand(path.join(unpackedDir, 'claumeter-statusline.cmd'));
+  }
+  // macOS: Claude Code가 sh 계열 셸로 실행하므로 환경변수 접두어 문법을 그대로 쓸 수 있다.
+  const shQuote = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
+  return `ELECTRON_RUN_AS_NODE=1 ${shQuote(process.execPath)} ${shQuote(path.join(unpackedDir, 'statuslineBridge.js'))}`;
+}
+
+// Windows의 Claude Code는 statusLine 명령을 Git Bash가 있으면 Git Bash로, 없으면 PowerShell로 실행한다.
+// 두 셸에서 모두 도는 형태는 "따옴표 없는 경로 하나"뿐이다 - PowerShell은 따옴표로 감싼 경로를 실행하지 않고
+// 문자열로 출력만 하고, 환경변수 설정 문법은 두 셸이 서로 다르다. 그래서 환경변수는 .cmd 래퍼 안에서 켜고,
+// 여기서는 래퍼 경로만 따옴표 없이 등록한다. 역슬래시는 Git Bash가 이스케이프로 먹어버리므로 슬래시로 바꾸고,
+// 경로에 공백 등이 있으면 ~(홈 폴더) 표기나 8.3 짧은 경로로 피한다. 둘 다 안 되면 마지막 수단으로 따옴표를
+// 씌운다(이 경우 Git Bash에서만 동작한다).
+function windowsStatusLineCommand(wrapperPath) {
+  const toSlashes = (p) => p.replace(/\\/g, '/');
+  const home = os.homedir();
+  const candidates = [
+    () => wrapperPath,
+    () => (wrapperPath.toLowerCase().startsWith(home.toLowerCase() + path.sep) ? '~' + wrapperPath.slice(home.length) : null),
+    () => windowsShortPath(wrapperPath),
+  ];
+  for (const candidate of candidates) {
+    const p = candidate();
+    if (p && SHELL_SAFE_PATH.test(toSlashes(p))) return toSlashes(p);
+  }
+  return `"${toSlashes(wrapperPath)}"`;
+}
+
+// 공백이 들어간 경로(예: C:\Program Files\ClauMeter)의 8.3 짧은 이름을 cmd로 얻는다. 볼륨에서 짧은 이름이
+// 꺼져 있으면 원래 경로가 그대로 나오므로 호출하는 쪽의 SHELL_SAFE_PATH 검사에서 걸러진다.
+function windowsShortPath(p) {
+  try {
+    const out = execFileSync('cmd.exe', [`/d /s /c "for %I in ("${p}") do @echo %~sI"`], {
+      windowsVerbatimArguments: true,
+      windowsHide: true,
+      encoding: 'utf-8',
+      timeout: 5000,
+    }).trim();
+    return out && fs.existsSync(out) ? out : null;
+  } catch {
+    return null;
+  }
+}
 
 // Claude Code의 statusLine 훅 경로는 사용자명뿐 아니라 설치 위치(현재 사용자용/모든 사용자용/커스텀 경로)에
 // 따라서도 달라지고, 이름 변경이나 재설치로도 바뀔 수 있다. 매번 손으로 등록/수정하게 두는 대신, 패키징된
@@ -709,19 +771,20 @@ function ensureStatusLineHook() {
   if (!app.isPackaged) return;
   try {
     const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
-    const bridgePath = path.join(process.resourcesPath, 'app.asar.unpacked', 'statuslineBridge.js');
-    const expectedCommand = `node "${bridgePath}"`;
+    const expectedCommand = buildStatusLineCommand();
 
     let settings = {};
     try {
       settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-    } catch {
-      settings = {};
+    } catch (err) {
+      // 파일이 아직 없을 때만 새로 만든다. 내용이 깨져 있거나(주석, 쉼표 오류 등) 읽을 수 없는데 {}로 덮어쓰면
+      // 사용자의 다른 Claude Code 설정이 전부 날아가므로, 그럴 때는 건드리지 않는다.
+      if (err.code !== 'ENOENT') return;
     }
 
     const current = settings.statusLine;
     const isMissing = !current || typeof current.command !== 'string';
-    const isOurs = !isMissing && current.command.includes(STATUSLINE_MARKER);
+    const isOurs = !isMissing && STATUSLINE_MARKERS.some((marker) => current.command.includes(marker));
 
     if (!isMissing && !isOurs) return; // 사용자가 다른 용도로 쓰고 있음 - 건드리지 않음
     if (!isMissing && current.command === expectedCommand) return; // 이미 최신 상태
@@ -765,12 +828,39 @@ ipcMain.on('clickthrough:hover', (_event, hovering) => {
   mainWindow.setIgnoreMouseEvents(!hovering, { forward: true });
 });
 
+// macOS에서 다운로드 폴더나 DMG 안의 앱을 바로 실행하면, macOS가 앱을 임시 경로(App Translocation)로 옮겨서
+// 실행한다. 그 경로를 statusLine 훅에 등록하면 앱을 닫는 순간 경로가 사라져 훅이 깨지므로, 응용 프로그램 폴더로
+// 옮기도록 권하고 옮기기 전까지는 훅을 등록하지 않는다. 훅을 등록해도 되는 위치면 true를 돌려준다.
+function ensureInApplicationsFolderOnMac() {
+  if (process.platform !== 'darwin' || !app.isPackaged || app.isInApplicationsFolder()) return true;
+  app.focus({ steal: true }); // Dock 아이콘이 없는 앱이라 이렇게 해야 대화상자가 다른 창 뒤에 숨지 않는다
+  const choice = dialog.showMessageBoxSync({
+    type: 'question',
+    buttons: [L('moveToApplicationsButton'), L('moveToApplicationsLater')],
+    defaultId: 0,
+    cancelId: 1,
+    message: L('moveToApplicationsMessage'),
+    detail: L('moveToApplicationsDetail'),
+  });
+  if (choice === 0) {
+    try {
+      // 성공하면 앱이 응용 프로그램 폴더에서 자동으로 다시 실행되고 지금 프로세스는 종료된다.
+      app.moveToApplicationsFolder();
+    } catch {
+      // 권한 문제 등으로 실패 - 이번 실행은 훅 등록 없이 위젯만 띄운다.
+    }
+  }
+  return false;
+}
+
 // 초기화 시각은 더 이상 사용자가 손으로 입력할 필요가 없다 - statusline 훅이 실측값을 남기는 즉시
 // computePercents()의 syncResetTimesFromRealtime()이 cfg를 실제 값으로 채운다. 그래서 최초 실행 때도
 // 설정 창을 강제로 띄우지 않고 바로 위젯을 보여주며, 실측값이 아직 없으면 "데이터 없음"으로 표시된다.
 // (설정 ⚙ 버튼으로 여전히 수동 보정은 가능하다.)
 app.whenReady().then(() => {
-  ensureStatusLineHook();
+  // 패키징된 앱은 Info.plist의 LSUIElement로 Dock 아이콘이 숨겨지고, 개발 모드(npm start)에서도 같게 보이도록 숨긴다.
+  if (process.platform === 'darwin' && app.dock) app.dock.hide();
+  if (ensureInApplicationsFolderOnMac()) ensureStatusLineHook();
   backfillUsageModelIfNeeded();
   createMainWindow();
 });

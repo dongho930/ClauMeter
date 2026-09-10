@@ -1,0 +1,87 @@
+name: Build
+
+# Windows 설치 파일(.exe)과 macOS DMG를 각 OS의 GitHub 러너에서 동시에 빌드한다.
+# - v로 시작하는 태그(v1.1.0 등)를 푸시하면: 두 설치 파일과 SHA256SUMS.txt를 같은 이름의 GitHub 릴리스에
+#   첨부한다(릴리스가 없으면 초안(draft)으로 새로 만든다). 태그는 package.json의 version과 같아야 한다.
+# - Actions 탭에서 수동 실행하면: 빌드만 하고 결과를 이 실행의 Artifacts에 올린다.
+# 코드 서명 인증서는 쓰지 않는다 - Windows는 서명 없이, macOS는 ad-hoc 서명만 한다(build/adhoc-sign.js).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            artifact: dist/*Setup*.exe
+          - os: macos-14
+            platform: mac
+            artifact: dist/*.dmg
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Check tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          VERSION="v$(node -p "require('./package.json').version")"
+          if [ "$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::태그($GITHUB_REF_NAME)와 package.json의 version($VERSION)이 다릅니다. package.json을 먼저 올려주세요."
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - name: Build installer
+        run: npx electron-builder --${{ matrix.platform }} --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ClauMeter-${{ matrix.platform }}
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
+
+  # 두 OS 빌드가 모두 성공했을 때만, 한 곳에서 릴리스에 첨부한다 (각 빌드가 따로 릴리스를 만들면 서로 충돌할 수 있다).
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+
+      - name: Rename and compute SHA-256
+        working-directory: out
+        run: |
+          # electron-builder의 Windows 파일명 "ClauMeter Setup 1.1.0.exe"는 GitHub 릴리스에서 공백이 점으로
+          # 바뀌므로, 해시 파일에 적히는 이름과 실제로 내려받는 이름이 같도록 미리 바꿔둔다.
+          for f in *\ *; do [ -e "$f" ] && mv "$f" "${f// /.}"; done
+          sha256sum *.exe *.dmg | tee SHA256SUMS.txt
+
+      - name: Attach to GitHub release
+        working-directory: out
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" --notes ""
+          gh release upload "$GITHUB_REF_NAME" *.exe *.dmg SHA256SUMS.txt --clobber

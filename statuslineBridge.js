@@ -11,16 +11,26 @@
 //
 // 절대 예외를 던지면 안 된다 - 이 스크립트가 죽으면 사용자의 실제 터미널 상태줄이
 // 깨지기 때문에, 무슨 일이 있어도 표준출력에 뭔가는 찍어야 한다.
+//
+// 사용자가 Node.js를 따로 설치하지 않아도 되도록, 이 스크립트는 클로미터 실행 파일 자체를
+// ELECTRON_RUN_AS_NODE=1로 띄워 "순수 Node"처럼 실행된다 (Windows는 claumeter-statusline.cmd가,
+// macOS는 main.js가 등록한 명령이 이 환경변수를 켠다). 그래서 여기서는 electron 모듈을 쓸 수 없다.
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-// 이 스크립트는 Electron 밖에서 순수 Node로 실행되므로 app.getPath('userData')를 쓸 수 없다.
-// main.js 쪽 realtimeUsage.js가 읽는 폴더와 반드시 일치해야 하므로, Electron이 Windows에서 쓰는
-// 기본 규칙(%APPDATA%\<package.json name>)을 그대로 재현한다. package.json의 "name"이 바뀌면
-// 여기 APP_NAME도 같이 바꿔야 한다.
+// app.getPath('userData')를 쓸 수 없으므로, main.js 쪽 realtimeUsage.js가 읽는 폴더와 일치하도록
+// Electron의 기본 규칙(<OS별 appData 폴더>/<package.json name>)을 그대로 재현한다.
+// package.json의 "name"이 바뀌면 여기 APP_NAME도 같이 바꿔야 한다.
 const APP_NAME = 'claumeter';
-const USER_DATA_DIR = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), APP_NAME);
+
+function appDataDir() {
+  if (process.platform === 'win32') return process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+  if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support');
+  return process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+}
+
+const USER_DATA_DIR = path.join(appDataDir(), APP_NAME);
 const OUT_PATH = path.join(USER_DATA_DIR, 'realtime_usage.json');
 
 function pick(entry) {

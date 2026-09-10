@@ -6,7 +6,8 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac"
   },
   "devDependencies": {
     "electron": "^32.0.0",
@@ -24,13 +25,15 @@
       "usageModel.js",
       "realtimeUsage.js",
       "statuslineBridge.js",
+      "claumeter-statusline.cmd",
       "locales.js",
       "renderer/**/*",
       "build/icon.ico",
       "package.json"
     ],
     "asarUnpack": [
-      "statuslineBridge.js"
+      "statuslineBridge.js",
+      "claumeter-statusline.cmd"
     ],
     "win": {
       "target": "nsis",
@@ -40,6 +43,22 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "icon": "build/icon-mac.png",
+      "category": "public.app-category.developer-tools",
+      "sign": "./build/adhoc-sign.js",
+      "extendInfo": {
+        "LSUIElement": true
+      }
     }
   }
 }
