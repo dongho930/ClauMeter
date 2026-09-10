@@ -2,17 +2,43 @@
 
 Claude Code의 5시간/주간 사용량 한도를 실시간으로 보여주는 Windows 데스크톱 위젯입니다.
 
-- Anthropic 서버가 직접 계산한 **실측 사용률**만 표시합니다 (비용 기반 추정 없음).
+**다운로드 → https://claumeter-web.skysky930.workers.dev**
+
+- Anthropic 서버가 직접 계산한 **실측 사용률**만 표시합니다.
 - 5시간·주간 게이지, 임계값(75%/90%) 색상 경고
+- 각 게이지 아래에 "○시간 ○분 후 초기화" 카운트다운
 - 과거 패턴을 학습해 "이 페이스면 구간 끝에 몇 %까지 갈지" 예측하는 AI 조언
+- 50%/75%/90% 도달 시 Windows 토스트 알림 (같은 구간에서 중복으로 뜨지 않음)
 - 한국어/영어/스페인어/프랑스어/독일어/포르투갈어/일본어/중국어/러시아어/이탈리아어/네덜란드어/폴란드어 12개 언어 지원
+
+## 시스템 요구 사항
+
+- Windows 10 또는 Windows 11
+- Claude Code CLI가 설치되어 있고 사용 중이어야 합니다 (Node.js 포함)
+- API 키 입력은 필요 없습니다
 
 ## 설치 (사용자용)
 
-1. [Releases](../../releases)에서 최신 `ClauMeter Setup.exe`를 내려받아 실행합니다.
+1. [다운로드 페이지](https://claumeter-web.skysky930.workers.dev)에서 설치 파일을 받아 실행합니다.
+   [Releases](../../releases)에서 직접 받으셔도 됩니다 - 현재 파일 이름은 `ClauMeter.Setup.1.0.0.exe`입니다.
 2. 설치 후 처음 실행하면 위젯이 화면 하단에 뜨고, `~/.claude/settings.json`의 statusLine 훅이 **자동으로 등록**됩니다
    (아래 참고). 이후 Claude Code 터미널을 한 번 열어서 아무 메시지나 보내면 위젯에 실제 수치가 뜨기 시작합니다.
    그 전까지는 "데이터 없음"으로 보이는 게 정상입니다.
+
+### "Windows의 PC 보호" 경고가 뜬다면
+
+클로미터는 코드 서명이 되어 있지 않아서 SmartScreen이 파란 경고창을 띄웁니다. **추가 정보**를 누른 뒤
+**실행**을 선택하면 됩니다. 서명 인증서는 매년 갱신 비용이 들어가서 무료 도구가 계속 감당하기엔 부담이 큽니다.
+
+대신 설치 파일의 해시를 공개합니다. 실행 전에 PowerShell에서 확인하실 수 있습니다:
+
+```powershell
+Get-FileHash .\ClauMeter.Setup.1.0.0.exe -Algorithm SHA256
+```
+
+```
+7e743707378f2c98897ed7de7cba486abf70e5f02b415b08ff1893b9d867183d
+```
 
 ### statusLine 훅 (자동 등록)
 
@@ -36,12 +62,15 @@ Claude Code의 5시간/주간 사용량 한도를 실시간으로 보여주는 W
 ## 개발자용
 
 ```bash
-git clone <이 저장소>
-cd claumeter
+git clone https://github.com/dongho930/ClauMeter.git
+cd ClauMeter
 npm install
-npm start          # 개발 모드 실행
+npm start           # 개발 모드 실행
 npm run dist        # build/icon.ico를 사용해 Setup.exe 생성 (electron-builder)
 ```
+
+`npm run dist`가 만드는 파일은 `dist/ClauMeter Setup <버전>.exe`입니다. 릴리즈에 올리면 GitHub이 파일명의
+공백을 점으로 바꾸기 때문에, 사용자가 실제로 내려받는 이름은 `ClauMeter.Setup.<버전>.exe`가 됩니다.
 
 ### AI 조언(Groq) 프록시
 
