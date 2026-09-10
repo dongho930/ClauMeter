@@ -1,0 +1,10 @@
+{
+  "name": "claumeter-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "클로미터(ClauMeter)의 Groq 호출을 대신 처리하는 Vercel 프록시 - 앱에는 Groq 키가 절대 들어가지 않는다.",
+  "dependencies": {
+    "@upstash/ratelimit": "^2.0.3",
+    "@upstash/redis": "^1.34.0"
+  }
+}

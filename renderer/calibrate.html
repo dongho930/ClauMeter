@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>위젯 설정</title>
+<style>
+  body {
+    font-family: "Segoe UI", sans-serif;
+    background: #1f2126;
+    color: #e6e6e6;
+    margin: 0;
+    padding: 18px;
+  }
+  .field { margin-bottom: 14px; position: relative; }
+  label { display: block; font-size: 12px; margin-bottom: 4px; color: #9aa0a6; }
+  .flag-icon {
+    display: inline-block;
+    width: 20px;
+    height: 14px;
+    border-radius: 2px;
+    overflow: hidden;
+    flex: none;
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.15);
+  }
+  .flag-icon svg { display: block; width: 100%; height: 100%; }
+  .lang-select { position: relative; }
+  .lang-select-btn {
+    width: 100%;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    font-size: 13px;
+    background: #2a2d33;
+    border: 1px solid #3a3d44;
+    color: #e6e6e6;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .lang-select-btn .lang-name { flex: 1; }
+  .lang-select-btn .lang-caret { color: #9aa0a6; font-size: 10px; }
+  .lang-menu {
+    list-style: none;
+    margin: 4px 0 0;
+    padding: 4px;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    max-height: 160px;
+    overflow-y: auto;
+    background: #2a2d33;
+    border: 1px solid #3a3d44;
+    border-radius: 4px;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+    z-index: 10;
+  }
+  .lang-menu li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    font-size: 13px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .lang-menu li:hover, .lang-menu li.active { background: #3a3d44; }
+  .buttons { display: flex; justify-content: flex-end; gap: 8px; }
+  button {
+    padding: 7px 16px;
+    font-size: 12px;
+    border-radius: 4px;
+    border: 1px solid #3a3d44;
+    background: #2a2d33;
+    color: #e6e6e6;
+    cursor: pointer;
+  }
+  button.primary { background: #3a7afe; border-color: #3a7afe; color: #fff; }
+  .opacity-row { display: flex; align-items: center; gap: 10px; }
+  input[type="range"] { width: auto; flex: 1; padding: 0; accent-color: #3a7afe; }
+  .opacity-value { width: 38px; text-align: right; font-size: 12px; color: #e6e6e6; flex: none; }
+</style>
+</head>
+<body>
+  <div class="field">
+    <label id="languageLabel">언어</label>
+    <div class="lang-select" id="langSelect">
+      <button type="button" class="lang-select-btn" id="langSelectBtn">
+        <span class="flag-icon" id="langSelectFlag"></span>
+        <span class="lang-name" id="langSelectName"></span>
+        <span class="lang-caret">▾</span>
+      </button>
+      <ul class="lang-menu" id="langMenu" hidden></ul>
+    </div>
+  </div>
+  <div class="field">
+    <label for="opacity" id="opacityLabel">위젯 투명도 (최대 80%)</label>
+    <div class="opacity-row">
+      <input id="opacity" type="range" min="20" max="80" step="1" />
+      <span class="opacity-value" id="opacityValue">80%</span>
+    </div>
+  </div>
+  <div class="buttons">
+    <button id="cancelBtn">취소</button>
+    <button id="okBtn" class="primary">확인</button>
+  </div>
+  <script src="flags.js"></script>
+  <script src="calibrate.js"></script>
+</body>
+</html>

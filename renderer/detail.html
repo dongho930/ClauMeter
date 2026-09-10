@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>사용량 세부 정보</title>
+<style>
+  body {
+    font-family: "Segoe UI", sans-serif;
+    background: #1f2126;
+    color: #e6e6e6;
+    margin: 0;
+    padding: 18px;
+  }
+  h3 { margin: 0 0 12px; font-size: 14px; font-weight: 600; }
+  .stats { display: flex; gap: 10px; margin-bottom: 14px; }
+  .stat-card {
+    flex: 1;
+    background: #2a2d33;
+    border: 1px solid #3a3d44;
+    border-radius: 6px;
+    padding: 10px;
+  }
+  .stat-title { font-size: 11px; color: #9aa0a6; margin-bottom: 6px; }
+  .stat-row { font-size: 12px; margin-bottom: 3px; }
+  .stat-row b { color: #e6e6e6; }
+  .model-tag { font-size: 10px; color: #7a828a; }
+  .stat-row.accuracy { font-size: 10px; color: #7a828a; margin-top: 4px; }
+  .status { font-size: 11px; color: #9aa0a6; margin-bottom: 8px; min-height: 14px; }
+  .advice-box {
+    background: #2a2d33;
+    border: 1px solid #3a3d44;
+    border-radius: 6px;
+    padding: 12px;
+    font-size: 13px;
+    line-height: 1.6;
+    min-height: 140px;
+    white-space: pre-wrap;
+  }
+  .advice-box.error { color: #ff6b6b; }
+  .advice-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #2a2d33;
+    border: 1px solid #3a3d44;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    font-size: 13px;
+  }
+  .risk-badge {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 600;
+    color: #1f2126;
+    padding: 3px 8px;
+    border-radius: 10px;
+  }
+  .advice-cards { display: flex; flex-direction: column; gap: 8px; }
+  .advice-card {
+    background: #2a2d33;
+    border: 1px solid #3a3d44;
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+  .advice-card-title { font-size: 11px; color: #9aa0a6; margin-bottom: 4px; }
+  .advice-card-pct { font-size: 17px; font-weight: 700; color: #7cc4ff; margin-bottom: 4px; }
+  .advice-card-body { font-size: 13px; line-height: 1.5; }
+  .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  button {
+    padding: 7px 16px;
+    font-size: 12px;
+    border-radius: 4px;
+    border: 1px solid #3a3d44;
+    background: #2a2d33;
+    color: #e6e6e6;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+</style>
+</head>
+<body>
+  <h3 id="detailHeading">AI 사용량 페이스 조언</h3>
+  <div class="stats" id="stats"></div>
+  <div class="status" id="status"></div>
+  <div class="advice-summary" id="adviceSummary" style="display:none;">
+    <span class="risk-badge" id="riskBadge"></span>
+    <span id="summaryText"></span>
+  </div>
+  <div class="advice-cards" id="adviceCards" style="display:none;">
+    <div class="advice-card">
+      <div class="advice-card-title" id="fiveHourCardTitle">5시간 한도</div>
+      <div class="advice-card-pct" id="fiveHourSafePct"></div>
+      <div class="advice-card-body" id="fiveHourAdvice"></div>
+    </div>
+    <div class="advice-card">
+      <div class="advice-card-title" id="weeklyCardTitle">주간 한도</div>
+      <div class="advice-card-pct" id="weeklySafePct"></div>
+      <div class="advice-card-body" id="weeklyAdvice"></div>
+    </div>
+  </div>
+  <div class="advice-box" id="adviceBox" style="display:none;"></div>
+  <div class="buttons">
+    <button id="refreshBtn"></button>
+  </div>
+  <script src="detail.js"></script>
+</body>
+</html>

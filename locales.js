@@ -1,0 +1,129 @@
+// UI 문자열을 언어별로 관리하는 모듈. main 프로세스에서 require해서 쓰고, 렌더러(웹 페이지)는
+// Node를 직접 못 쓰므로 IPC로 필요한 언어의 문자열 객체만 JSON으로 넘겨받아 쓴다.
+// 새 언어를 추가하려면 SUPPORTED_LANGUAGES/LANGUAGE_NAME_EN에 한 줄, LANG_ORDER에 코드 하나,
+// ROWS의 각 행 끝에 번역 한 칸만 그 순서대로 추가하면 된다.
+
+// 국기는 이모지가 아니라 renderer/flags.js의 인라인 SVG로 그린다(Windows 폰트에 따라 국기
+// 이모지가 그냥 "KR" 같은 텍스트로 보이는 문제가 있어서). 여기 name에는 순수 언어명만 둔다.
+const SUPPORTED_LANGUAGES = [
+  { code: 'ko', name: '한국어' },
+  { code: 'en', name: 'English' },
+  { code: 'es', name: 'Español' },
+  { code: 'fr', name: 'Français' },
+  { code: 'de', name: 'Deutsch' },
+  { code: 'pt', name: 'Português' },
+  { code: 'ja', name: '日本語' },
+  { code: 'zh', name: '简体中文' },
+  { code: 'ru', name: 'Русский' },
+  { code: 'it', name: 'Italiano' },
+  { code: 'nl', name: 'Nederlands' },
+  { code: 'pl', name: 'Polski' },
+];
+
+// Groq에게 "이 언어로 답해라"라고 지시할 때 쓰는 영어 언어명 (모델이 가장 잘 알아듣는 표기)
+const LANGUAGE_NAME_EN = {
+  ko: 'Korean',
+  en: 'English',
+  es: 'Spanish',
+  fr: 'French',
+  de: 'German',
+  pt: 'Portuguese',
+  ja: 'Japanese',
+  zh: 'Simplified Chinese',
+  ru: 'Russian',
+  it: 'Italian',
+  nl: 'Dutch',
+  pl: 'Polish',
+};
+
+const DEFAULT_LANGUAGE = 'en';
+
+const LANG_ORDER = ['ko', 'en', 'es', 'fr', 'de', 'pt', 'ja', 'zh', 'ru', 'it', 'nl', 'pl'];
+
+// [key, ko, en, es, fr, de, pt, ja, zh, ru, it, nl, pl]
+const ROWS = [
+  // 브랜드명(클로미터/ClauMeter)은 고유명사라서 번역하지 않는다 - 한국어만 발음을 한글로 표기하고, 나머지 언어는 로마자 표기를 그대로 쓴다.
+  ['appTitle', '클로미터', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter'],
+  ['widgetWindowTitle', '클로미터', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter'],
+  ['fiveHourLabel', '5시간', '5-hour', '5 horas', '5 heures', '5 Stunden', '5 horas', '5時間', '5小时', '5 часов', '5 ore', '5 uur', '5 godzin'],
+  ['thisWeekLabel', '이번 주', 'This week', 'Esta semana', 'Cette semaine', 'Diese Woche', 'Esta semana', '今週', '本周', 'На этой неделе', 'Questa settimana', 'Deze week', 'W tym tygodniu'],
+  ['noData', '데이터 없음', 'No data', 'Sin datos', 'Aucune donnée', 'Keine Daten', 'Sem dados', 'データなし', '暂无数据', 'Нет данных', 'Nessun dato', 'Geen gegevens', 'Brak danych'],
+  ['resetPending', '메시지를 보내면 시작됩니다', 'Starts when you send a message', 'Comienza al enviar un mensaje', "Démarre à l'envoi d'un message", 'Beginnt mit der ersten Nachricht', 'Começa ao enviar uma mensagem', 'メッセージを送信すると開始されます', '发送消息后开始计时', 'Начнётся при отправке сообщения', "Inizia all'invio di un messaggio", 'Begint zodra je een bericht verstuurt', 'Rozpocznie się po wysłaniu wiadomości'],
+  ['resetIn', '{h}시간 {m}분 후 초기화', 'Resets in {h}h {m}m', 'Se reinicia en {h}h {m}m', 'Réinitialisation dans {h} h {m} min', 'Zurücksetzen in {h} Std {m} Min', 'Reinicia em {h}h {m}min', '{h}時間{m}分後にリセット', '{h}小时{m}分钟后重置', 'Сброс через {h} ч {m} мин', 'Si azzera tra {h}h {m}min', 'Reset over {h}u {m}min', 'Reset za {h}g {m}min'],
+  ['resetInDays', '{d}일 {h}시간 {m}분 후 초기화', 'Resets in {d}d {h}h {m}m', 'Se reinicia en {d}d {h}h {m}m', 'Réinitialisation dans {d} j {h} h {m} min', 'Zurücksetzen in {d} T {h} Std {m} Min', 'Reinicia em {d}d {h}h {m}min', '{d}日{h}時間{m}分後にリセット', '{d}天{h}小时{m}分钟后重置', 'Сброс через {d} д {h} ч {m} мин', 'Si azzera tra {d}g {h}h {m}min', 'Reset over {d}d {h}u {m}min', 'Reset za {d}d {h}g {m}min'],
+  ['updatedAt', '{hh}:{mm} 기준', 'as of {hh}:{mm}', 'a las {hh}:{mm}', 'à {hh}:{mm}', 'Stand {hh}:{mm}', 'às {hh}:{mm}', '{hh}:{mm} 時点', '更新于 {hh}:{mm}', 'по состоянию на {hh}:{mm}', 'aggiornato alle {hh}:{mm}', 'bijgewerkt om {hh}:{mm}', 'stan na {hh}:{mm}'],
+  ['durationHM', '{h}시간 {m}분', '{h}h {m}m', '{h}h {m}min', '{h} h {m} min', '{h} Std {m} Min', '{h}h {m}min', '{h}時間{m}分', '{h}小时{m}分钟', '{h} ч {m} мин', '{h}h {m}min', '{h}u {m}min', '{h}g {m}min'],
+  ['durationDHM', '{d}일 {h}시간 {m}분', '{d}d {h}h {m}m', '{d}d {h}h {m}min', '{d} j {h} h {m} min', '{d} T {h} Std {m} Min', '{d}d {h}h {m}min', '{d}日{h}時間{m}分', '{d}天{h}小时{m}分钟', '{d} д {h} ч {m} мин', '{d}g {h}h {m}min', '{d}d {h}u {m}min', '{d}d {h}g {m}min'],
+  ['unknownDuration', '알 수 없음', 'Unknown', 'Desconocido', 'Inconnu', 'Unbekannt', 'Desconhecido', '不明', '未知', 'Неизвестно', 'Sconosciuto', 'Onbekend', 'Nieznany'],
+  ['tooltipClickThroughOn', '마우스 통과 모드 끄기 (지금 켜짐)', 'Turn off click-through (currently on)', 'Desactivar clic a través (activado)', 'Désactiver le clic transparent (activé)', 'Klick-durch deaktivieren (aktiv)', 'Desativar clique-através (ativado)', 'クリックスルーをオフにする(現在オン)', '关闭鼠标穿透(当前已开启)', 'Выключить сквозной клик (сейчас включен)', 'Disattiva il click-through (attualmente attivo)', 'Klik-door uitschakelen (nu ingeschakeld)', 'Wyłącz klikanie na wskroś (obecnie włączone)'],
+  ['tooltipClickThroughOff', '마우스 통과 모드 켜기', 'Turn on click-through', 'Activar clic a través', 'Activer le clic transparent', 'Klick-durch aktivieren', 'Ativar clique-através', 'クリックスルーをオンにする', '开启鼠标穿透', 'Включить сквозной клик', 'Attiva il click-through', 'Klik-door inschakelen', 'Włącz klikanie na wskroś'],
+  ['tooltipSettings', '위젯 설정 (투명도)', 'Widget settings (opacity)', 'Ajustes del widget (opacidad)', 'Paramètres du widget (opacité)', 'Widget-Einstellungen (Deckkraft)', 'Configurações do widget (opacidade)', 'ウィジェット設定(不透明度)', '小组件设置(透明度)', 'Настройки виджета (прозрачность)', 'Impostazioni widget (opacità)', 'Widgetinstellingen (transparantie)', 'Ustawienia widżetu (przezroczystość)'],
+  ['tooltipDetail', '세부 정보', 'Details', 'Detalles', 'Détails', 'Details', 'Detalhes', '詳細', '详细信息', 'Подробности', 'Dettagli', 'Details', 'Szczegóły'],
+  ['tooltipClose', '종료', 'Quit', 'Salir', 'Quitter', 'Beenden', 'Sair', '終了', '退出', 'Выход', 'Esci', 'Afsluiten', 'Zamknij'],
+
+  ['menuRefresh', '지금 새로고침', 'Refresh now', 'Actualizar ahora', 'Actualiser maintenant', 'Jetzt aktualisieren', 'Atualizar agora', '今すぐ更新', '立即刷新', 'Обновить сейчас', 'Aggiorna ora', 'Nu vernieuwen', 'Odśwież teraz'],
+  ['menuSettings', '위젯 설정...', 'Widget settings...', 'Ajustes del widget...', 'Paramètres du widget...', 'Widget-Einstellungen...', 'Configurações do widget...', 'ウィジェット設定...', '小组件设置...', 'Настройки виджета...', 'Impostazioni widget...', 'Widgetinstellingen...', 'Ustawienia widżetu...'],
+  ['menuAutostart', '시작 프로그램에 등록', 'Start with system', 'Iniciar con el sistema', 'Démarrer avec le système', 'Mit System starten', 'Iniciar com o sistema', 'システム起動時に開始', '开机自启动', 'Запускать вместе с системой', 'Avvia con il sistema', 'Starten met systeem', 'Uruchamiaj z systemem'],
+  ['menuQuit', '종료', 'Quit', 'Salir', 'Quitter', 'Beenden', 'Sair', '終了', '退出', 'Выход', 'Esci', 'Afsluiten', 'Zamknij'],
+
+  ['settingsWindowTitle', '위젯 설정', 'Widget Settings', 'Ajustes del widget', 'Paramètres du widget', 'Widget-Einstellungen', 'Configurações do widget', 'ウィジェット設定', '小组件设置', 'Настройки виджета', 'Impostazioni widget', 'Widgetinstellingen', 'Ustawienia widżetu'],
+  ['opacityLabel', '위젯 투명도 (최대 50%)', 'Widget transparency (max 50%)', 'Transparencia del widget (máx. 50%)', 'Transparence du widget (max 50 %)', 'Widget-Transparenz (max. 50 %)', 'Transparência do widget (máx. 50%)', 'ウィジェットの透明度(最大50%)', '小组件透明度(最高50%)', 'Прозрачность виджета (макс. 50%)', 'Trasparenza del widget (max 50%)', 'Widgettransparantie (max. 50%)', 'Przezroczystość widżetu (maks. 50%)'],
+  ['languageLabel', '언어', 'Language', 'Idioma', 'Langue', 'Sprache', 'Idioma', '言語', '语言', 'Язык', 'Lingua', 'Taal', 'Język'],
+  ['ok', '확인', 'OK', 'Aceptar', 'OK', 'OK', 'OK', 'OK', '确定', 'ОК', 'OK', 'OK', 'OK'],
+  ['cancel', '취소', 'Cancel', 'Cancelar', 'Annuler', 'Abbrechen', 'Cancelar', 'キャンセル', '取消', 'Отмена', 'Annulla', 'Annuleren', 'Anuluj'],
+
+  ['detailWindowTitle', '사용량 세부 정보', 'Usage Details', 'Detalles de uso', "Détails d'utilisation", 'Nutzungsdetails', 'Detalhes de uso', '使用状況の詳細', '使用详情', 'Подробности использования', 'Dettagli di utilizzo', 'Gebruiksdetails', 'Szczegóły wykorzystania'],
+  ['detailHeading', 'AI 사용량 페이스 조언', 'AI Usage Pace Advice', 'Consejo de ritmo de uso (IA)', "Conseil de rythme d'utilisation (IA)", 'KI-Ratschlag zum Nutzungstempo', 'Conselho de ritmo de uso (IA)', 'AI 使用ペースのアドバイス', 'AI 使用节奏建议', 'Совет ИИ по темпу использования', "Consiglio IA sul ritmo di utilizzo", 'AI-advies over gebruikstempo', 'Porada AI dotycząca tempa wykorzystania'],
+  ['loading', '불러오는 중...', 'Loading...', 'Cargando...', 'Chargement...', 'Wird geladen...', 'Carregando...', '読み込み中...', '加载中...', 'Загрузка...', 'Caricamento...', 'Laden...', 'Wczytywanie...'],
+  ['fiveHourLimit', '5시간 한도', '5-hour limit', 'Límite de 5 horas', 'Limite de 5 heures', '5-Stunden-Limit', 'Limite de 5 horas', '5時間制限', '5小时限额', '5-часовой лимит', 'Limite di 5 ore', '5-uurslimiet', 'Limit 5-godzinny'],
+  ['weeklyLimit', '주간 한도', 'Weekly limit', 'Límite semanal', 'Limite hebdomadaire', 'Wochenlimit', 'Limite semanal', '週間制限', '每周限额', 'Недельный лимит', 'Limite settimanale', 'Wekelijkse limiet', 'Limit tygodniowy'],
+  ['usageRateLabel', '사용률: ', 'Usage: ', 'Uso: ', 'Utilisation : ', 'Nutzung: ', 'Uso: ', '使用率: ', '使用率: ', 'Использование: ', 'Utilizzo: ', 'Gebruik: ', 'Wykorzystanie: '],
+  ['realValueTag', '실제 클로드 수치', 'Actual Claude value', 'Valor real de Claude', 'Valeur réelle de Claude', 'Tatsächlicher Claude-Wert', 'Valor real do Claude', 'Claudeの実測値', 'Claude 实际数值', 'Фактическое значение Claude', 'Valore reale di Claude', 'Werkelijke waarde van Claude', 'Rzeczywista wartość Claude'],
+  ['needsTerminalTag', 'Claude Code 터미널 세션 필요', 'Requires a Claude Code terminal session', 'Requiere una sesión de terminal de Claude Code', 'Nécessite une session de terminal Claude Code', 'Erfordert eine Claude-Code-Terminalsitzung', 'Requer uma sessão de terminal do Claude Code', 'Claude Codeのターミナルセッションが必要です', '需要 Claude Code 终端会话', 'Требуется сессия терминала Claude Code', 'Richiede una sessione terminale di Claude Code', 'Vereist een Claude Code-terminalsessie', 'Wymaga sesji terminala Claude Code'],
+  ['elapsedLabel', '경과: ', 'Elapsed: ', 'Transcurrido: ', 'Écoulé : ', 'Verstrichen: ', 'Decorrido: ', '経過: ', '已用时间: ', 'Прошло: ', 'Trascorso: ', 'Verstreken: ', 'Upłynęło: '],
+  ['remainingLabel', '남은 시간: ', 'Time left: ', 'Tiempo restante: ', 'Temps restant : ', 'Verbleibende Zeit: ', 'Tempo restante: ', '残り時間: ', '剩余时间: ', 'Осталось: ', 'Tempo rimanente: ', 'Resterende tijd: ', 'Pozostały czas: '],
+  ['projectedLabel', '예상 마감 사용률: ', 'Projected end-of-window usage: ', 'Uso proyectado al final: ', 'Utilisation projetée en fin de période : ', 'Voraussichtliche Nutzung am Ende: ', 'Uso projetado no fim do período: ', '予測される期間終了時の使用率: ', '预计周期结束时的使用率: ', 'Прогноз использования к концу периода: ', 'Utilizzo previsto a fine periodo: ', 'Verwacht gebruik aan het einde van de periode: ', 'Przewidywane wykorzystanie na koniec okresu: '],
+  ['modelBasedTag', '개인화 모델', 'Personalized model', 'Modelo personalizado', 'Modèle personnalisé', 'Personalisiertes Modell', 'Modelo personalizado', 'パーソナライズモデル', '个性化模型', 'Персонализированная модель', 'Modello personalizzato', 'Gepersonaliseerd model', 'Model spersonalizowany'],
+  ['naiveTag', '기본 추정 (학습 중)', 'Basic estimate (learning)', 'Estimación básica (aprendiendo)', 'Estimation basique (apprentissage)', 'Einfache Schätzung (lernend)', 'Estimativa básica (aprendendo)', '基本推定(学習中)', '基础估算(学习中)', 'Базовая оценка (обучение)', 'Stima di base (in apprendimento)', 'Basisschatting (lerend)', 'Szacunek podstawowy (uczenie się)'],
+  ['accuracyLine', '최근 {n}개 구간 검증: {model} / {naive} (평균 절대오차, 낮을수록 정확)', 'Last {n} windows checked: {model} / {naive} (mean absolute error, lower is better)', 'Últimas {n} ventanas verificadas: {model} / {naive} (error absoluto medio, menor es mejor)', "{n} dernières périodes vérifiées : {model} / {naive} (erreur absolue moyenne, plus bas = mieux)", 'Letzte {n} Fenster geprüft: {model} / {naive} (mittlerer absoluter Fehler, niedriger ist besser)', 'Últimas {n} janelas verificadas: {model} / {naive} (erro absoluto médio, quanto menor melhor)', '直近{n}区間の検証: {model} / {naive} (平均絶対誤差、低いほど正確)', '最近{n}个周期的验证: {model} / {naive} (平均绝对误差，越低越准确)', 'Проверка последних {n} периодов: {model} / {naive} (средняя абсолютная ошибка, чем ниже — тем точнее)', 'Verifica delle ultime {n} finestre: {model} / {naive} (errore assoluto medio, più basso è meglio)', 'Laatste {n} periodes gecontroleerd: {model} / {naive} (gemiddelde absolute fout, lager is beter)', 'Weryfikacja ostatnich {n} okresów: {model} / {naive} (średni błąd bezwzględny, im niższy, tym dokładniejszy)'],
+  ['modelErrorLabel', '모델 오차 {x}%', 'Model error {x}%', 'Error del modelo {x}%', 'Erreur du modèle {x} %', 'Modellfehler {x}%', 'Erro do modelo {x}%', 'モデル誤差 {x}%', '模型误差 {x}%', 'Ошибка модели {x}%', 'Errore del modello {x}%', 'Modelfout {x}%', 'Błąd modelu {x}%'],
+  ['modelErrorUnknown', '모델 오차 -', 'Model error -', 'Error del modelo -', 'Erreur du modèle -', 'Modellfehler -', 'Erro do modelo -', 'モデル誤差 -', '模型误差 -', 'Ошибка модели -', 'Errore del modello -', 'Modelfout -', 'Błąd modelu -'],
+  ['naiveErrorLabel', '단순추정 오차 {y}%', 'Naive estimate error {y}%', 'Error de estimación simple {y}%', 'Erreur estimation simple {y} %', 'Einfache Schätzung Fehler {y}%', 'Erro da estimativa simples {y}%', '単純推定誤差 {y}%', '简单估算误差 {y}%', 'Ошибка простой оценки {y}%', 'Errore stima semplice {y}%', 'Fout eenvoudige schatting {y}%', 'Błąd prostego oszacowania {y}%'],
+  ['naiveErrorUnknown', '단순추정 오차 -', 'Naive estimate error -', 'Error de estimación simple -', 'Erreur estimation simple -', 'Einfache Schätzung Fehler -', 'Erro da estimativa simples -', '単純推定誤差 -', '简单估算误差 -', 'Ошибка простой оценки -', 'Errore stima semplice -', 'Fout eenvoudige schatting -', 'Błąd prostego oszacowania -'],
+  ['recommendedUpTo', '추천: 앞으로 +{x}%까지', 'Recommended: up to +{x}% more', 'Recomendado: hasta +{x}% más', "Recommandé : jusqu'à +{x} % de plus", 'Empfohlen: bis zu +{x}% mehr', 'Recomendado: até +{x}% a mais', '推奨: あと+{x}%まで', '建议: 最多还可使用+{x}%', 'Рекомендуется: ещё до +{x}%', 'Consigliato: fino a +{x}% in più', 'Aanbevolen: tot +{x}% meer', 'Zalecane: jeszcze do +{x}%'],
+  ['refreshBtn', '새로고침', 'Refresh', 'Actualizar', 'Actualiser', 'Aktualisieren', 'Atualizar', '更新', '刷新', 'Обновить', 'Aggiorna', 'Vernieuwen', 'Odśwież'],
+  ['statusCached', '최근 계산된 조언 (5분 이내 캐시)', 'Recently computed advice (cached, within 5 min)', 'Consejo calculado recientemente (en caché, menos de 5 min)', 'Conseil calculé récemment (en cache, moins de 5 min)', 'Kürzlich berechneter Rat (zwischengespeichert, unter 5 Min)', 'Conselho calculado recentemente (em cache, menos de 5 min)', '最近計算されたアドバイス(5分以内のキャッシュ)', '最近计算的建议(5分钟内缓存)', 'Недавно рассчитанный совет (кэш до 5 мин)', 'Consiglio calcolato di recente (in cache, entro 5 min)', 'Onlangs berekend advies (gecached, binnen 5 min)', 'Niedawno obliczona porada (w pamięci podręcznej, do 5 min)'],
+  ['statusFresh', '방금 새로 계산됨', 'Just computed', 'Recién calculado', "Calculé à l'instant", 'Gerade berechnet', 'Recém-calculado', 'たった今計算されました', '刚刚计算完成', 'Только что рассчитано', 'Appena calcolato', 'Zojuist berekend', 'Właśnie obliczono'],
+  ['adviceUnavailable', '조언을 표시할 수 없습니다.', 'Advice unavailable.', 'No se puede mostrar el consejo.', 'Conseil indisponible.', 'Rat nicht verfügbar.', 'Conselho indisponível.', 'アドバイスを表示できません。', '无法显示建议。', 'Совет недоступен.', 'Consiglio non disponibile.', 'Advies niet beschikbaar.', 'Porada niedostępna.'],
+  ['pleaseWait', '잠시만 기다려주세요...', 'Please wait...', 'Espere un momento...', 'Veuillez patienter...', 'Bitte warten...', 'Aguarde um momento...', 'しばらくお待ちください...', '请稍候...', 'Пожалуйста, подождите...', 'Attendere prego...', 'Even geduld...', 'Proszę czekać...'],
+  ['errNoData', '실시간 사용량 데이터가 없습니다.\nClaude Code 터미널에서 세션을 사용한 뒤 다시 시도해주세요.', 'No real-time usage data yet.\nUse a Claude Code terminal session, then try again.', 'Aún no hay datos de uso en tiempo real.\nUsa una sesión de terminal de Claude Code y vuelve a intentarlo.', "Aucune donnée d'utilisation en temps réel pour le moment.\nUtilisez une session de terminal Claude Code, puis réessayez.", 'Noch keine Echtzeit-Nutzungsdaten.\nVerwenden Sie eine Claude-Code-Terminalsitzung und versuchen Sie es erneut.', 'Ainda não há dados de uso em tempo real.\nUse uma sessão de terminal do Claude Code e tente novamente.', 'リアルタイムの使用状況データがありません。\nClaude Codeのターミナルセッションを使用してから再度お試しください。', '暂无实时使用数据。\n请在 Claude Code 终端中使用会话后重试。', 'Нет данных об использовании в реальном времени.\nИспользуйте сессию терминала Claude Code и повторите попытку.', 'Nessun dato di utilizzo in tempo reale.\nUsa una sessione terminale di Claude Code e riprova.', 'Nog geen realtime gebruiksgegevens.\nGebruik een Claude Code-terminalsessie en probeer het opnieuw.', 'Brak danych o wykorzystaniu w czasie rzeczywistym.\nUżyj sesji terminala Claude Code i spróbuj ponownie.'],
+  ['errRateLimited', '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.', 'Too many requests. Please try again shortly.', 'Demasiadas solicitudes. Inténtalo de nuevo en un momento.', 'Trop de requêtes. Réessayez dans un instant.', 'Zu viele Anfragen. Bitte versuchen Sie es gleich noch einmal.', 'Muitas solicitações. Tente novamente em instantes.', 'リクエストが多すぎます。しばらくしてから再度お試しください。', '请求过于频繁，请稍后重试。', 'Слишком много запросов. Повторите попытку через некоторое время.', 'Troppe richieste. Riprova tra poco.', 'Te veel verzoeken. Probeer het straks opnieuw.', 'Zbyt wiele żądań. Spróbuj ponownie za chwilę.'],
+  ['errHttp', 'Groq API 호출에 실패했습니다 (HTTP {status}).\n{message}', 'Groq API call failed (HTTP {status}).\n{message}', 'La llamada a la API de Groq falló (HTTP {status}).\n{message}', "L'appel à l'API Groq a échoué (HTTP {status}).\n{message}", 'Groq-API-Aufruf fehlgeschlagen (HTTP {status}).\n{message}', 'A chamada à API Groq falhou (HTTP {status}).\n{message}', 'Groq APIの呼び出しに失敗しました(HTTP {status})。\n{message}', 'Groq API 调用失败(HTTP {status})。\n{message}', 'Ошибка вызова Groq API (HTTP {status}).\n{message}', "Chiamata all'API Groq non riuscita (HTTP {status}).\n{message}", 'Aanroep van Groq API mislukt (HTTP {status}).\n{message}', 'Wywołanie API Groq nie powiodło się (HTTP {status}).\n{message}'],
+  ['errNetwork', '네트워크 오류로 조언을 불러오지 못했습니다.\n{message}', 'A network error prevented loading advice.\n{message}', 'Un error de red impidió cargar el consejo.\n{message}', "Une erreur réseau a empêché le chargement du conseil.\n{message}", 'Ein Netzwerkfehler hat das Laden des Rats verhindert.\n{message}', 'Um erro de rede impediu o carregamento do conselho.\n{message}', 'ネットワークエラーによりアドバイスを読み込めませんでした。\n{message}', '网络错误，无法加载建议。\n{message}', 'Сетевая ошибка помешала загрузить совет.\n{message}', "Un errore di rete ha impedito il caricamento del consiglio.\n{message}", 'Een netwerkfout verhinderde het laden van advies.\n{message}', 'Błąd sieci uniemożliwił wczytanie porady.\n{message}'],
+  ['errEmpty', 'AI 응답이 비어있습니다. 잠시 후 다시 시도해주세요.', 'The AI response was empty. Please try again shortly.', 'La respuesta de la IA estaba vacía. Inténtalo de nuevo en un momento.', "La réponse de l'IA était vide. Réessayez dans un instant.", 'Die KI-Antwort war leer. Bitte versuchen Sie es gleich noch einmal.', 'A resposta da IA veio vazia. Tente novamente em instantes.', 'AIの応答が空でした。しばらくしてから再度お試しください。', 'AI 响应为空，请稍后重试。', 'Пустой ответ ИИ. Повторите попытку через некоторое время.', "La risposta dell'IA era vuota. Riprova tra poco.", 'Het AI-antwoord was leeg. Probeer het straks opnieuw.', 'Odpowiedź AI była pusta. Spróbuj ponownie za chwilę.'],
+  ['errUnknown', '알 수 없는 오류가 발생했습니다.', 'An unknown error occurred.', 'Se produjo un error desconocido.', "Une erreur inconnue s'est produite.", 'Ein unbekannter Fehler ist aufgetreten.', 'Ocorreu um erro desconhecido.', '不明なエラーが発生しました。', '发生未知错误。', 'Произошла неизвестная ошибка.', 'Si è verificato un errore sconosciuto.', 'Er is een onbekende fout opgetreden.', 'Wystąpił nieznany błąd.'],
+  ['riskSafe', '안전', 'Safe', 'Seguro', 'Sûr', 'Sicher', 'Seguro', '安全', '安全', 'Безопасно', 'Sicuro', 'Veilig', 'Bezpiecznie'],
+  ['riskCaution', '주의', 'Caution', 'Precaución', 'Attention', 'Vorsicht', 'Cuidado', '注意', '注意', 'Осторожно', 'Attenzione', 'Voorzichtig', 'Ostrożnie'],
+  ['riskDanger', '위험', 'Danger', 'Peligro', 'Danger', 'Gefahr', 'Perigo', '危険', '危险', 'Опасно', 'Pericolo', 'Gevaar', 'Niebezpiecznie'],
+];
+
+const LOCALES = LANG_ORDER.reduce((acc, code) => {
+  acc[code] = {};
+  return acc;
+}, {});
+
+for (const row of ROWS) {
+  const [key, ...values] = row;
+  LANG_ORDER.forEach((code, i) => {
+    LOCALES[code][key] = values[i];
+  });
+}
+
+function t(lang, key, vars) {
+  const strings = LOCALES[lang] || LOCALES[DEFAULT_LANGUAGE];
+  const template = strings && strings[key] != null ? strings[key] : key;
+  if (!vars) return template;
+  return template.replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? String(vars[k]) : ''));
+}
+
+module.exports = { LOCALES, SUPPORTED_LANGUAGES, LANGUAGE_NAME_EN, DEFAULT_LANGUAGE, t };

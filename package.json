@@ -1,0 +1,46 @@
+{
+  "name": "claumeter",
+  "version": "1.0.0",
+  "description": "클로미터 (ClauMeter) - Claude 5시간/주간 사용량 게이지 위젯",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.claumeter.app",
+    "productName": "클로미터",
+    "copyright": "Copyright © 2026",
+    "files": [
+      "main.js",
+      "preload.js",
+      "configStore.js",
+      "costStore.js",
+      "usageModel.js",
+      "realtimeUsage.js",
+      "statuslineBridge.js",
+      "locales.js",
+      "renderer/**/*",
+      "build/icon.ico",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "statuslineBridge.js"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
+  }
+}
