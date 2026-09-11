@@ -18,7 +18,11 @@ jobs:
         include:
           - os: windows-latest
             platform: win
-            artifact: dist/*Setup*.exe
+            # latest.yml과 .blockmap은 설치된 앱의 자동 업데이트(electron-updater)가 새 버전을 찾고 받는 데 쓴다.
+            artifact: |
+              dist/*.Setup.*.exe
+              dist/*.Setup.*.exe.blockmap
+              dist/latest.yml
           - os: macos-14
             platform: mac
             artifact: dist/*.dmg
@@ -68,13 +72,11 @@ jobs:
           path: out
           merge-multiple: true
 
-      - name: Rename and compute SHA-256
+      # 파일 이름은 package.json의 nsis.artifactName으로 공백 없이 정해져 있어서 그대로 올린다.
+      # 이름을 바꾸면 latest.yml에 적힌 이름과 달라져서 자동 업데이트가 설치 파일을 찾지 못한다.
+      - name: Compute SHA-256
         working-directory: out
-        run: |
-          # electron-builder의 Windows 파일명 "ClauMeter Setup 1.1.0.exe"는 GitHub 릴리스에서 공백이 점으로
-          # 바뀌므로, 해시 파일에 적히는 이름과 실제로 내려받는 이름이 같도록 미리 바꿔둔다.
-          for f in *\ *; do [ -e "$f" ] && mv "$f" "${f// /.}"; done
-          sha256sum *.exe *.dmg | tee SHA256SUMS.txt
+        run: sha256sum *.exe *.dmg | tee SHA256SUMS.txt
 
       - name: Attach to GitHub release
         working-directory: out
@@ -84,4 +86,4 @@ jobs:
         run: |
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
             || gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" --notes ""
-          gh release upload "$GITHUB_REF_NAME" *.exe *.dmg SHA256SUMS.txt --clobber
+          gh release upload "$GITHUB_REF_NAME" *.exe *.exe.blockmap latest.yml *.dmg SHA256SUMS.txt --clobber

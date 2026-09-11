@@ -8,6 +8,7 @@ const costStore = require('./costStore');
 const configStore = require('./configStore');
 const usageModel = require('./usageModel');
 const realtimeUsage = require('./realtimeUsage');
+const updater = require('./updater');
 const { LOCALES, SUPPORTED_LANGUAGES, LANGUAGE_NAME_EN, DEFAULT_LANGUAGE, t } = require('./locales');
 
 // 일부 환경(하드웨어 가속/샌드박스 제한)에서 GPU 프로세스가 죽는 문제를 피하기 위한 안전장치
@@ -503,6 +504,7 @@ function buildContextMenu() {
   return Menu.buildFromTemplate([
     { label: L('menuRefresh'), click: () => pushUsageUpdate() },
     { label: L('menuSettings'), click: () => openCalibrateWindow() },
+    ...updater.buildMenuItems(),
     { type: 'separator' },
     {
       label: L('menuAutostart'),
@@ -525,7 +527,7 @@ function buildContextMenu() {
       },
     },
     { type: 'separator' },
-    { label: L('menuQuit'), click: () => app.exit(0) },
+    { label: L('menuQuit'), click: () => quitApp() },
   ]);
 }
 
@@ -614,13 +616,14 @@ function openCalibrateWindow() {
     lang: resolveLanguage(),
     languages: SUPPORTED_LANGUAGES,
     notificationsEnabled: cfg.notificationsEnabled !== false,
+    autoUpdateEnabled: cfg.autoUpdateEnabled !== false,
   };
   const opacityBeforeEdit = getConfiguredOpacity();
 
   let settled = false;
   const win = new BrowserWindow({
     width: 360,
-    height: 240,
+    height: 272,
     useContentSize: true, // width/height가 타이틀바 제외한 콘텐츠 영역 기준이 되도록
     resizable: false,
     minimizable: false,
@@ -660,6 +663,7 @@ function openCalibrateWindow() {
       cfg.windowOpacity = clamp(data.opacity, MIN_OPACITY, MAX_OPACITY);
     }
     cfg.notificationsEnabled = !!data.notificationsEnabled;
+    cfg.autoUpdateEnabled = !!data.autoUpdateEnabled;
     configStore.saveConfig(cfg);
     win.close();
     if (mainWindow) mainWindow.setOpacity(getConfiguredOpacity());
@@ -803,7 +807,13 @@ ipcMain.on('open-calibrate-window', () => openCalibrateWindow());
 // app.quit()은 창을 하나씩 정상적으로 닫아보는 방식인데, 그 과정에서 GPU/유틸리티 프로세스가
 // 완전히 정리되지 않고 작업관리자에 좀비 프로세스로 남는 경우가 있어서 app.exit()으로 즉시
 // 강제 종료한다. 설정은 바뀔 때마다 바로바로 저장되므로 종료 시 따로 정리할 미저장 데이터가 없다.
-ipcMain.on('quit-app', () => app.exit(0));
+// 단, 자동 업데이트를 이미 내려받아 뒀다면 종료하는 김에 설치를 시작한다 (updater.js 참고).
+function quitApp() {
+  if (updater.installOnQuitIfReady()) return;
+  app.exit(0);
+}
+
+ipcMain.on('quit-app', () => quitApp());
 ipcMain.handle('get-usage-advice', (_event, opts) => fetchUsageAdvice(!!(opts && opts.forceRefresh)));
 
 // 언어는 OK/취소 흐름과 별개로 선택 즉시 적용된다(투명도 미리보기와 달리 취소해도 되돌리지 않음) -
@@ -863,8 +873,13 @@ app.whenReady().then(() => {
   if (ensureInApplicationsFolderOnMac()) ensureStatusLineHook();
   backfillUsageModelIfNeeded();
   createMainWindow();
+  updater.init({
+    t: L,
+    iconPath: ICON_PATH,
+    isAutoCheckEnabled: () => cfg.autoUpdateEnabled !== false,
+  });
 });
 
 app.on('window-all-closed', () => {
-  app.exit(0);
+  quitApp();
 });

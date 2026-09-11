@@ -24,6 +24,7 @@
       "costStore.js",
       "usageModel.js",
       "realtimeUsage.js",
+      "updater.js",
       "statuslineBridge.js",
       "claumeter-statusline.cmd",
       "locales.js",
@@ -37,12 +38,20 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "publish": [
+        {
+          "provider": "github",
+          "owner": "dongho930",
+          "repo": "ClauMeter"
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true
+      "createDesktopShortcut": true,
+      "artifactName": "${productName}.Setup.${version}.${ext}"
     },
     "mac": {
       "target": [
@@ -60,5 +69,8 @@
         "LSUIElement": true
       }
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
   }
 }

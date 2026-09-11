@@ -9,6 +9,7 @@ Claude Code의 5시간/주간 사용량 한도를 실시간으로 보여주는 W
 - 각 게이지 아래에 "○시간 ○분 후 초기화" 카운트다운
 - 과거 패턴을 학습해 "이 페이스면 구간 끝에 몇 %까지 갈지" 예측하는 AI 조언
 - 50%/75%/90% 도달 시 데스크톱 알림 (같은 구간에서 중복으로 뜨지 않음)
+- 자동 업데이트 (Windows는 자동 설치, macOS는 새 버전 알림)
 - 한국어/영어/스페인어/프랑스어/독일어/포르투갈어/일본어/중국어/러시아어/이탈리아어/네덜란드어/폴란드어 12개 언어 지원
 
 ## 시스템 요구 사항
@@ -75,6 +76,16 @@ DMG의 해시는 릴리스에 함께 올라가는 `SHA256SUMS.txt`와 비교해�
 shasum -a 256 ~/Downloads/ClauMeter-*-universal.dmg
 ```
 
+## 업데이트
+
+- **Windows**: 새 버전이 나오면 클로미터가 백그라운드에서 내려받은 뒤 알림을 띄웁니다. 알림이나 위젯 우클릭 메뉴의
+  **재시작해서 업데이트**를 누르면 바로 적용되고, 누르지 않아도 클로미터를 종료할 때 설치됩니다.
+- **macOS**: 새 버전이 나오면 알림이 뜨고, 누르면 다운로드 페이지가 열립니다. Apple 코드 서명이 없는 앱은 macOS가
+  자동 설치를 허용하지 않아서, 새 DMG를 받아 응용 프로그램 폴더의 앱을 교체해 주세요.
+- 앱을 켜고 조금 뒤, 그리고 6시간마다 자동으로 확인합니다. 위젯 우클릭 메뉴의 **업데이트 확인**으로 바로 확인할
+  수도 있고, 자동 확인은 위젯 설정에서 끌 수 있습니다.
+- 1.1.0 이하 버전에는 업데이트 기능이 없습니다. 이 경우 한 번만 새 설치 파일을 직접 받아 설치해 주세요.
+
 ## statusLine 훅 (자동 등록)
 
 클로미터는 Claude Code 터미널이 상태줄을 그릴 때 남기는 실측값을 읽습니다. 이 훅은 앱을 실행할 때마다
@@ -123,8 +134,8 @@ npm run dist        # Windows: build/icon.ico를 사용해 Setup.exe 생성 (ele
 npm run dist:mac    # macOS에서만: universal DMG 생성
 ```
 
-Windows의 `npm run dist`가 만드는 파일은 `dist/ClauMeter Setup <버전>.exe`입니다. 릴리즈에 올리면 GitHub이 파일명의
-공백을 점으로 바꾸기 때문에, 사용자가 실제로 내려받는 이름은 `ClauMeter.Setup.<버전>.exe`가 됩니다.
+Windows의 `npm run dist`는 `dist/`에 설치 파일 `ClauMeter.Setup.<버전>.exe`와, 자동 업데이트가 쓰는
+`latest.yml`, `ClauMeter.Setup.<버전>.exe.blockmap`을 만듭니다.
 로컬에서 `npm run dist`가 `Cannot create symbolic link` 오류로 실패하면, Windows 설정에서 개발자 모드를 켜거나
 관리자 권한 터미널에서 다시 실행하세요 (electron-builder가 내려받는 도구 압축을 풀 때 심볼릭 링크 권한이 필요합니다).
 
@@ -136,13 +147,18 @@ macOS용 DMG는 macOS에서만 만들 수 있어서, Mac이 없어도 되도록 
 1. `package.json`의 `version`을 올리고 커밋합니다 (예: `1.1.0`).
 2. 같은 버전의 태그를 푸시합니다: `git tag v1.1.0 && git push origin v1.1.0`
    (태그와 `version`이 다르면 빌드가 바로 실패합니다.)
-3. 두 빌드가 모두 성공하면 `ClauMeter.Setup.<버전>.exe`, `ClauMeter-<버전>-universal.dmg`, `SHA256SUMS.txt`가
-   같은 이름의 GitHub 릴리스에 첨부됩니다. 릴리스가 없으면 초안(draft)으로 만들어지니, 내용을 확인한 뒤 게시하세요.
+3. 두 빌드가 모두 성공하면 `ClauMeter.Setup.<버전>.exe`, `latest.yml`, `.blockmap`, `ClauMeter-<버전>-universal.dmg`,
+   `SHA256SUMS.txt`가 같은 이름의 GitHub 릴리스에 첨부됩니다. 릴리스가 없으면 초안(draft)으로 만들어지니, 내용을
+   확인한 뒤 게시하세요.
+4. **게시하는 순간 설치된 앱들이 업데이트를 받기 시작합니다** (초안 상태에서는 앱이 보지 않습니다). Windows 자동
+   업데이트는 `latest.yml`에 적힌 파일 이름으로 설치 파일을 찾으므로, 첨부된 파일 이름을 바꾸거나 `latest.yml`을
+   지우지 마세요.
 
 태그 없이 **Actions → Build → Run workflow**로 수동 실행하면 릴리스에는 올리지 않고, 결과 파일을 그 실행 페이지의
 Artifacts에서 받을 수 있습니다.
 
 코드 서명 인증서는 쓰지 않습니다. Windows는 서명 없이, macOS는 ad-hoc 서명만 합니다(`build/adhoc-sign.js`).
+정식 서명을 받는 방법은 [`docs/CODE_SIGNING.md`](docs/CODE_SIGNING.md)에 정리되어 있습니다.
 macOS 아이콘은 `build/icon-mac.png`(1024×1024)를 사용합니다.
 
 ### AI 조언(Groq) 프록시
