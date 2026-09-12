@@ -4,6 +4,7 @@
 //   node tools/eval-model.js curve      경과율별 오차 - 데드존 임계값을 고칠 때
 //   node tools/eval-model.js idle       유휴시간 -> 추가 지출 확률 - 활동도 곡선을 고칠 때
 //   node tools/eval-model.js shift      패턴 급변 시 신뢰도 페널티 효과 (합성 시나리오)
+//   node tools/eval-model.js truth      실측 한도 % 이력 현황 - 비용이 올바른 대리 지표인지 검증용
 //
 // 평가 방식은 walk-forward다. k번째 구간을 예측할 때는 1~k-1 구간까지만 학습된 상태를 쓴다.
 // 이미 본 데이터로 자기 자신을 맞히는 착시를 막기 위함이다.
@@ -32,6 +33,37 @@ require.cache[electronPath] = {
 
 const costStore = require(path.join(PROJECT, 'costStore.js'));
 const usageModel = require(path.join(PROJECT, 'usageModel.js'));
+
+// usageHistory는 위 스텁 때문에 임시 폴더를 보게 되므로 모듈을 쓰지 않고 실제 경로에서 직접 읽는다
+// (평가 도구가 실제 학습 상태를 건드리지 않게 하려고 스텁을 걸어둔 것이라, 스텁을 풀 수는 없다).
+function realUserDataDir() {
+  const home = os.homedir();
+  if (process.platform === 'win32') return path.join(process.env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'ClauMeter');
+  if (process.platform === 'darwin') return path.join(home, 'Library', 'Application Support', 'ClauMeter');
+  return path.join(home, '.config', 'ClauMeter');
+}
+const HISTORY_PATH = path.join(realUserDataDir(), 'usage_history.jsonl');
+
+function readUsageHistory() {
+  let text;
+  try {
+    text = fs.readFileSync(HISTORY_PATH, 'utf-8');
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const line of text.split(String.fromCharCode(10))) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const obj = JSON.parse(trimmed);
+      if (obj && typeof obj.capturedAt === 'number') out.push(obj);
+    } catch {
+      // 쓰다 만 줄
+    }
+  }
+  return out.sort((a, b) => a.capturedAt - b.capturedAt);
+}
 
 const FIVE_H = 5 * 3600;
 const nowSec = Date.now() / 1000;
@@ -228,6 +260,51 @@ function cmdShift() {
   console.log('페널티를 끈 값과 비교하려면 usageModel.js의 LOSING_CONFIDENCE_FACTOR를 1로 두고 다시 실행한다.');
 }
 
+// 지금까지 모든 평가는 비용을 한도 소모의 대리 지표로 삼았다. usageHistory가 실측 % 이력을
+// 쌓기 시작하면 그 대리 관계를 직접 검증할 수 있다. 표본이 모이기 전까지는 현황만 보여준다.
+function cmdTruth(events) {
+  const hist = readUsageHistory();
+  console.log(`실측 한도 % 이력: ${hist.length}건  (${HISTORY_PATH})
+`);
+  if (hist.length === 0) {
+    console.log('아직 기록이 없다. 1.3.1 이상을 실행하고 터미널에서 Claude Code 세션을 열면 쌓이기 시작한다.');
+    console.log('상태줄이 그려질 때만 갱신되므로, 위젯만 켜두고 터미널을 쓰지 않으면 늘지 않는다.');
+    return;
+  }
+
+  const day = (ms) => new Date(ms).toISOString().slice(0, 16).replace('T', ' ');
+  console.log(`기간: ${day(hist[0].capturedAt)} ~ ${day(hist[hist.length - 1].capturedAt)}`);
+
+  const weeklyWindows = new Set(hist.filter((h) => h.weeklyResetAt != null).map((h) => h.weeklyResetAt));
+  const fiveHourWindows = new Set(hist.filter((h) => h.fiveHourResetAt != null).map((h) => h.fiveHourResetAt));
+  console.log(`관측된 5시간 구간 ${fiveHourWindows.size}개 / 주간 구간 ${weeklyWindows.size}개`);
+
+  // 실측 %가 오른 구간과 그 사이에 쓴 비용을 짝지으면 "$1당 한도 몇 %"를 볼 수 있다.
+  // 모델별로 이 값이 다르면 비용을 그대로 대리 지표로 쓰는 지금 방식이 왜곡된다.
+  const pairs = [];
+  for (let i = 1; i < hist.length; i++) {
+    const a = hist[i - 1];
+    const b = hist[i];
+    if (a.weeklyResetAt == null || a.weeklyResetAt !== b.weeklyResetAt) continue; // 같은 주간 구간 안에서만
+    const dPct = b.weeklyPct - a.weeklyPct;
+    if (dPct <= 0) continue;
+    let cost = 0;
+    for (const e of events) if (e.ts * 1000 > a.capturedAt && e.ts * 1000 <= b.capturedAt) cost += e.cost;
+    if (cost > 0) pairs.push({ dPct, cost, perDollar: dPct / cost });
+  }
+  if (pairs.length < 5) {
+    console.log(`
+비용 대비 실측 % 증가를 짝지을 수 있는 구간: ${pairs.length}개 - 아직 판단하기에 부족하다.`);
+    return;
+  }
+  const rates = pairs.map((p) => p.perDollar).sort((x, y) => x - y);
+  const q = (f) => rates[Math.min(rates.length - 1, Math.floor(rates.length * f))];
+  console.log(`
+주간 한도 소모율 ($1당 %): 중앙값 ${q(0.5).toFixed(3)}  (하위25% ${q(0.25).toFixed(3)} / 상위25% ${q(0.75).toFixed(3)})`);
+  console.log(`표본 ${pairs.length}개. 상·하위가 크게 벌어져 있으면 비용만으로는 한도 소모를 설명하지 못한다는 뜻이다`);
+  console.log('(모델 구성 차이가 유력한 원인 - 그 경우 비용 대신 모델별 가중치를 쓰는 것을 검토해야 한다).');
+}
+
 // ---------------------------------------------------------------------------
 
 const cmd = process.argv[2] || 'summary';
@@ -240,10 +317,10 @@ if (cmd === 'shift') {
     console.log('완료된 5시간 구간이 없어 평가할 수 없다.');
     process.exit(1);
   }
-  const table = { summary: cmdSummary, curve: cmdCurve, idle: cmdIdle };
+  const table = { summary: cmdSummary, curve: cmdCurve, idle: cmdIdle, truth: (ev) => cmdTruth(ev) };
   const fn = table[cmd];
   if (!fn) {
-    console.log(`알 수 없는 명령: ${cmd}\n사용법: node tools/eval-model.js [summary|curve|idle|shift]`);
+    console.log(`알 수 없는 명령: ${cmd}\n사용법: node tools/eval-model.js [summary|curve|idle|shift|truth]`);
     process.exit(1);
   }
   fn(events, wins);

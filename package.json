@@ -6,7 +6,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node test/usageModel.test.js",
+    "test": "node test/usageModel.test.js && node test/usageHistory.test.js",
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac"
   },
@@ -24,6 +24,7 @@
       "configStore.js",
       "costStore.js",
       "usageModel.js",
+      "usageHistory.js",
       "realtimeUsage.js",
       "updater.js",
       "statuslineBridge.js",

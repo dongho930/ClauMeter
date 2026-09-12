@@ -18,7 +18,7 @@ function read() {
   try {
     raw = JSON.parse(fs.readFileSync(REALTIME_PATH, 'utf-8'));
   } catch {
-    return { fiveHour: null, weekly: null };
+    return { fiveHour: null, weekly: null, capturedAt: null };
   }
 
   const now = Date.now();
@@ -28,7 +28,9 @@ function read() {
   const weekly =
     raw.weekly && typeof raw.weekly.resetsAt === 'number' && now < raw.weekly.resetsAt ? raw.weekly : null;
 
-  return { fiveHour, weekly };
+  // capturedAt은 상태줄이 이 값을 실제로 캡처한 시각이다. usageHistory가 같은 캡처를 중복
+  // 기록하지 않는 판정 키로 쓴다.
+  return { fiveHour, weekly, capturedAt: typeof raw.capturedAt === 'number' ? raw.capturedAt : null };
 }
 
 module.exports = { read };

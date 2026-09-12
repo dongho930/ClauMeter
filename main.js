@@ -8,6 +8,7 @@ const costStore = require('./costStore');
 const configStore = require('./configStore');
 const usageModel = require('./usageModel');
 const realtimeUsage = require('./realtimeUsage');
+const usageHistory = require('./usageHistory');
 const updater = require('./updater');
 const { LOCALES, SUPPORTED_LANGUAGES, LANGUAGE_NAME_EN, DEFAULT_LANGUAGE, t } = require('./locales');
 
@@ -190,6 +191,10 @@ function syncResetTimesFromRealtime(realtime) {
 function computePercents() {
   costStore.scanAndUpdate();
   const realtime = realtimeUsage.read();
+  // 실측 %는 덮어쓰기로만 남아서 지나간 값을 볼 수 없었다. 이력을 남겨야 "비용이 한도 소모의
+  // 올바른 대리 지표인가", "모델마다 $1이 한도를 깎는 정도가 다른가" 같은 질문에 나중에 답할 수 있다.
+  // 예측 동작에는 영향을 주지 않는다 (기록만 한다).
+  usageHistory.record(realtime);
   syncResetTimesFromRealtime(realtime);
   advanceWeekResetIfNeeded();
   advanceFiveHourResetIfNeeded();
