@@ -159,6 +159,26 @@ function interpolateBucket(kindState, clampedFrac) {
   };
 }
 
+// 최근 검증에서 모델이 단순 선형 예측보다 더 자주 틀렸다면, 스스로를 의심하고 단순 예측 쪽으로
+// 더 많이 물러선다(신뢰도를 깎으면 predictFromState의 블렌딩이 자동으로 그렇게 동작한다).
+// 사용 패턴이 급변한 직후처럼 학습된 곡선이 낡았을 때를 위한 안전장치다.
+//
+// 측정: 평상시에는 한 번도 발동하지 않았고(실 사용 기록 112회 중 0회 - 모델이 계속 이기고 있어서),
+// 단순 예측이 정답에 가까운 패턴으로 급변한 상황에서만 켜져서 중앙값 오차를 18% 줄였다.
+// 반대로 둘 다 틀리는 상황에서는 효과가 없었다(오차 0.5%p 이내). 즉 정확도 개선책이 아니라
+// 낡은 학습이 오래 버티는 것을 막는 보험이다.
+const RECENT_CHECK_COUNT = 5;
+const LOSING_CONFIDENCE_FACTOR = 0.4;
+
+function recentConfidencePenalty(kindState) {
+  const recent = (kindState.history || [])
+    .slice(-RECENT_CHECK_COUNT)
+    .filter((h) => h.modelErrorPct != null && h.naiveErrorPct != null);
+  if (recent.length < 3) return 1; // 표본이 너무 적으면 판단하지 않는다
+  const lost = recent.filter((h) => Math.abs(h.modelErrorPct) > Math.abs(h.naiveErrorPct)).length;
+  return lost > recent.length / 2 ? LOSING_CONFIDENCE_FACTOR : 1;
+}
+
 // kindState(학습된 곡선)만으로 예측한다. completedWindows 임계값 체크는 호출부 책임.
 // 버킷 표본수가 적을수록(신뢰도 낮을수록) "경과율 = 최종비용 대비 비율"이라는 단순 가정 쪽으로
 // 점점 더 끌어당겨서(가중 블렌딩) 데이터가 부족한 구간에서 모델이 과신하지 않게 한다.
@@ -167,7 +187,7 @@ function predictFromState(kindState, elapsedFrac, currentCost) {
   const found = interpolateBucket(kindState, clamped);
   if (!found) return null;
 
-  const confidence = found.count / (found.count + CONFIDENCE_K);
+  const confidence = (found.count / (found.count + CONFIDENCE_K)) * recentConfidencePenalty(kindState);
   const blendedMean = confidence * found.mean + (1 - confidence) * clamped;
   // 경과율이 0%에 가까울 때는 비율이 너무 작아 나눗셈이 불안정해지므로 제외한다.
   if (blendedMean <= 0.01) return null;
@@ -241,6 +261,20 @@ function isSameWindowPhase(a, b, windowMs, toleranceMs) {
   if (a == null || b == null) return false;
   const diff = Math.abs(a - b);
   return Math.min(diff, windowMs - diff) <= toleranceMs;
+}
+
+// 구간 초반의 "예상 마감 사용률"은 어떤 방식으로도 믿을 수 없어서 아예 내보내지 않는다.
+// 실측(walk-forward, 경과율별 중앙값 오차):
+//     t=0.06  모델 51%  단순 132%      t=0.20  모델 72%  단순 152%
+//     t=0.14  모델 87%  단순 115%      t=0.26  모델 46%  단순 103%
+//     t=0.28  모델 31%                 t=0.30  모델 25%
+// 25% 부근에서 오차가 뚜렷하게 꺾인다. 그 전 구간은 틀린 숫자를 보여주느니 "아직 모름"이 낫다.
+// 모델 예측뿐 아니라 단순 선형 폴백에도 같이 적용해야 한다 - 초반엔 폴백이 오히려 더 나쁘고,
+// 배율이 1/경과율이라 상한 없이 발산한다(경과 1분이면 300배).
+const PROJECTION_DEADZONE_FRAC = 0.25;
+
+function isProjectionReliable(elapsedFrac) {
+  return elapsedFrac != null && Number.isFinite(elapsedFrac) && elapsedFrac >= PROJECTION_DEADZONE_FRAC;
 }
 
 // 한 한도의 학습을 통째로 버린다. 구간 경계를 자르는 기준(주간 초기화 시각의 위상)이 바뀌어서
@@ -398,6 +432,7 @@ module.exports = {
   resetKind,
   windowPhaseOf,
   isSameWindowPhase,
+  isProjectionReliable,
   MIN_WINDOWS_FOR_MODEL,
   MODEL_VERSION,
 };

@@ -329,26 +329,23 @@ function computeAdviceStats() {
     fiveHourModelPred != null && fiveHourCost > 0 ? fiveHourModelPred / fiveHourCost : null;
   const weeklyPaceMultiplier = weeklyModelPred != null && weeklyCost > 0 ? weeklyModelPred / weeklyCost : null;
 
+  // 구간 초반에는 모델이든 단순 폴백이든 예측이 의미 없는 수준이라 아예 내보내지 않는다
+  // (usageModel.isProjectionReliable 참고). 주간 한도는 완료 구간이 하나뿐이라 같은 임계값을
+  // 검증하지 못했지만, "구간의 1/4도 안 지난 시점의 외삽은 못 믿는다"는 근거는 구간 길이와 무관하다.
+  const fiveHourElapsedFrac = fiveHourElapsedMs != null ? fiveHourElapsedMs / FIVE_HOUR_MS : null;
+  const weeklyElapsedFrac = weeklyElapsedMs != null ? weeklyElapsedMs / WEEK_MS : null;
+
   let fiveHourProjectedPct = null;
-  if (p.fiveHourPct != null) {
+  if (p.fiveHourPct != null && usageModel.isProjectionReliable(fiveHourElapsedFrac)) {
     const multiplier =
-      fiveHourPaceMultiplier != null
-        ? fiveHourPaceMultiplier
-        : fiveHourElapsedMs && fiveHourElapsedMs > 0
-          ? FIVE_HOUR_MS / fiveHourElapsedMs
-          : null;
-    fiveHourProjectedPct = multiplier != null ? Math.round(p.fiveHourPct * multiplier * 10) / 10 : null;
+      fiveHourPaceMultiplier != null ? fiveHourPaceMultiplier : 1 / fiveHourElapsedFrac;
+    fiveHourProjectedPct = Math.round(p.fiveHourPct * multiplier * 10) / 10;
   }
 
   let weeklyProjectedPct = null;
-  if (p.weeklyPct != null) {
-    const multiplier =
-      weeklyPaceMultiplier != null
-        ? weeklyPaceMultiplier
-        : weeklyElapsedMs && weeklyElapsedMs > 0
-          ? WEEK_MS / weeklyElapsedMs
-          : null;
-    weeklyProjectedPct = multiplier != null ? Math.round(p.weeklyPct * multiplier * 10) / 10 : null;
+  if (p.weeklyPct != null && usageModel.isProjectionReliable(weeklyElapsedFrac)) {
+    const multiplier = weeklyPaceMultiplier != null ? weeklyPaceMultiplier : 1 / weeklyElapsedFrac;
+    weeklyProjectedPct = Math.round(p.weeklyPct * multiplier * 10) / 10;
   }
 
   return {

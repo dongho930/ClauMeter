@@ -66,8 +66,11 @@ function renderStats(stats) {
     statsEl.innerHTML = '';
     return;
   }
-  const fiveHourTag = stats.fiveHourModelBased ? STR.modelBasedTag : STR.naiveTag;
-  const weeklyTag = stats.weeklyModelBased ? STR.modelBasedTag : STR.naiveTag;
+  // 구간 초반이라 예측을 내보내지 않은 경우("-")에는 예측 방식 태그도 달지 않는다.
+  const methodTag = (hasProjection, modelBased) =>
+    hasProjection ? `<span class="model-tag">${modelBased ? STR.modelBasedTag : STR.naiveTag}</span>` : '';
+  const fiveHourTag = methodTag(stats.fiveHourProjectedPct != null, stats.fiveHourModelBased);
+  const weeklyTag = methodTag(stats.weeklyProjectedPct != null, stats.weeklyModelBased);
   const fiveHourAccLine = accuracyLine(stats.fiveHourAccuracy);
   const weeklyAccLine = accuracyLine(stats.weeklyAccuracy);
   const fiveHourUsageRow = stats.fiveHourHasData
@@ -82,7 +85,7 @@ function renderStats(stats) {
       <div class="stat-row">${fiveHourUsageRow}</div>
       <div class="stat-row">${STR.elapsedLabel}${stats.fiveHourElapsed}</div>
       <div class="stat-row">${STR.remainingLabel}${stats.fiveHourRemaining}</div>
-      <div class="stat-row">${STR.projectedLabel}<b>${stats.fiveHourProjectedPct != null ? stats.fiveHourProjectedPct + '%' : '-'}</b> <span class="model-tag">${fiveHourTag}</span></div>
+      <div class="stat-row">${STR.projectedLabel}<b>${stats.fiveHourProjectedPct != null ? stats.fiveHourProjectedPct + '%' : '-'}</b> ${fiveHourTag}</div>
       ${fiveHourAccLine}
     </div>
     <div class="stat-card">
@@ -90,7 +93,7 @@ function renderStats(stats) {
       <div class="stat-row">${weeklyUsageRow}</div>
       <div class="stat-row">${STR.elapsedLabel}${stats.weeklyElapsed}</div>
       <div class="stat-row">${STR.remainingLabel}${stats.weeklyRemaining}</div>
-      <div class="stat-row">${STR.projectedLabel}<b>${stats.weeklyProjectedPct != null ? stats.weeklyProjectedPct + '%' : '-'}</b> <span class="model-tag">${weeklyTag}</span></div>
+      <div class="stat-row">${STR.projectedLabel}<b>${stats.weeklyProjectedPct != null ? stats.weeklyProjectedPct + '%' : '-'}</b> ${weeklyTag}</div>
       ${weeklyAccLine}
     </div>
   `;
