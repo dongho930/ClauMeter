@@ -6,6 +6,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
+    "test": "node test/usageModel.test.js",
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac"
   },
