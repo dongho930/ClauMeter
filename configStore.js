@@ -8,7 +8,13 @@ const DATA_DIR = app.getPath('userData');
 const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
 
 const DEFAULT_CONFIG = {
-  usageModelBackfilledAt: null, // 과거 기록으로 개인화 모델을 백필한 시각 - 재실행마다 중복 학습되지 않도록 한 번만 실행
+  // 과거 기록으로 개인화 모델을 백필한 이력 - { version, fiveHourAt, weeklyAt, weeklyPhase }.
+  // weeklyPhase는 백필에 사용한 주간 구간 격자의 위상 - 실측 초기화 시각이 들어와 격자가 달라지면
+  // 학습을 버리고 다시 배워야 하므로 함께 기록한다.
+  // 한도별로 따로 기록한다 (주간은 실제 초기화 시각을 알기 전까지 보류되므로 시점이 다르다).
+  // version이 usageModel.MODEL_VERSION과 다르면 학습이 폐기된 것이므로 백필도 다시 수행한다.
+  // (1.2.0까지 쓰던 usageModelBackfilledAt 키는 더 이상 읽지 않는다 - 남아있어도 무해.)
+  usageModelBackfill: null,
   weekResetAt: null, // 다음 주간 초기화 시각 (ms epoch) - 이 시각을 지나면 자동으로 7일 뒤로 넘어감
   fiveHourResetAt: null, // 현재(또는 마지막) 5시간 구간의 초기화 시각 (ms epoch)
   fiveHourWindowPending: false, // true면 직전 구간이 끝났지만 아직 새 메시지가 없어 다음 구간이 시작 안 된 상태

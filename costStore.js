@@ -16,6 +16,7 @@ const COSTS_LOG_PATH = path.join(os.homedir(), '.claude', 'metrics', 'costs.json
 const DATA_DIR = app.getPath('userData');
 const CACHE_PATH = path.join(DATA_DIR, 'cost_cache.json');
 const RETENTION_SECONDS = 8 * 86400; // 8일치만 보관 (주간=7일 롤링 + 여유 1일)
+const MAX_HISTORY_BYTES = 64 * 1024 * 1024; // 백필 시 원본 로그를 한 번에 읽는 상한 (앱 시작이 멈추지 않도록)
 
 let state = null;
 
@@ -155,11 +156,80 @@ function getEarliestEventAfter(tsEpoch) {
   return earliest;
 }
 
-// 캐시에 남아있는(최대 8일치) 원본 이벤트를 모두 반환한다. 개인화 모델을 과거 기록으로
-// 한 번에 백필(backfill)하는 데 쓴다.
-function getAllEvents() {
+// 가장 최근 사용 이벤트의 시각(초). 유휴시간(마지막 사용 이후 경과)을 구해 개인화 모델이
+// "이 구간의 사용이 이미 끝났는지" 판단하는 데 쓴다. 이벤트가 없으면 null.
+function getLatestEventTs() {
   const st = loadState();
-  return st.events.slice();
+  let latest = null;
+  for (const e of st.events) {
+    if (latest == null || e.ts > latest) latest = e.ts;
+  }
+  return latest;
+}
+
+// 개인화 모델 백필용으로, 8일 보관 캐시(state.events)가 아니라 원본 로그를 처음부터 다시 읽어
+// 남아있는 과거 이벤트를 최대한 복원한다. 주간 모델은 완료된 구간이 1주에 하나씩만 생겨서
+// 8일치로는 학습 표본이 1개밖에 안 되는데, costs.jsonl에는 보통 그보다 훨씬 긴 기록이 있다.
+//
+// 증분 스캔 상태(offset/mtime/tail/sessionTotals)는 건드리지 않는다 - 여기서 오염시키면
+// 실시간 집계가 같은 이벤트를 다시 세거나 건너뛰게 된다.
+function getHistoricalEvents() {
+  let stat;
+  try {
+    stat = fs.statSync(COSTS_LOG_PATH);
+  } catch {
+    return []; // 로그 파일이 아직 없음
+  }
+
+  // 로그가 비정상적으로 크면 앱 시작이 멈추지 않도록 뒷부분만 읽는다. 중간부터 읽으면 각 세션의
+  // 첫 줄이 "그때까지의 누적값"이라 그대로 delta로 쓰면 안 되므로, 그 줄은 기준값 시드로만 쓴다.
+  const start = Math.max(0, stat.size - MAX_HISTORY_BYTES);
+  const partial = start > 0;
+
+  let text = '';
+  try {
+    const fd = fs.openSync(COSTS_LOG_PATH, 'r');
+    const buf = Buffer.alloc(stat.size - start);
+    fs.readSync(fd, buf, 0, buf.length, start);
+    fs.closeSync(fd);
+    text = buf.toString('utf-8');
+  } catch {
+    return [];
+  }
+
+  const lines = text.split('\n');
+  lines.pop(); // 마지막 줄은 아직 다 쓰이지 않았을 수 있다
+  if (partial) lines.shift(); // 중간부터 읽었으면 첫 줄은 잘려 있다
+
+  const totals = {};
+  const events = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let obj;
+    try {
+      obj = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    const sessionId = obj.session_id;
+    const cost = obj.estimated_cost_usd;
+    const tsStr = obj.timestamp;
+    if (!sessionId || typeof cost !== 'number' || !tsStr) continue;
+    const ts = Date.parse(tsStr) / 1000;
+    if (Number.isNaN(ts)) continue;
+
+    const seen = Object.prototype.hasOwnProperty.call(totals, sessionId);
+    const prev = seen ? totals[sessionId] : 0;
+    totals[sessionId] = cost;
+    if (!seen && partial) continue; // 잘린 로그의 첫 스냅샷 - 기준값만 잡고 이벤트로는 세지 않는다
+
+    const delta = cost - prev;
+    if (delta > 0) events.push({ ts, cost: delta });
+  }
+
+  events.sort((a, b) => a.ts - b.ts);
+  return events;
 }
 
 module.exports = {
@@ -167,5 +237,6 @@ module.exports = {
   getCostSince,
   getCostBetween,
   getEarliestEventAfter,
-  getAllEvents,
+  getLatestEventTs,
+  getHistoricalEvents,
 };

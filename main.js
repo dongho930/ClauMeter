@@ -157,6 +157,13 @@ function currentFiveHourStartMs() {
   return cfg.fiveHourResetAt != null ? cfg.fiveHourResetAt - FIVE_HOUR_MS : Date.now() - FIVE_HOUR_MS;
 }
 
+// 마지막 사용 이후 흐른 시간(초). 개인화 모델이 "이 구간의 사용이 이미 끝났는지" 판단하는 데 쓴다.
+// 사용 기록이 아직 없으면 null - 이 경우 모델은 유휴 보정 없이 곡선 예측을 그대로 쓴다.
+function currentIdleSec() {
+  const lastSec = costStore.getLatestEventTs();
+  return lastSec != null ? Math.max(0, Date.now() / 1000 - lastSec) : null;
+}
+
 // Anthropic 서버가 알려준 실제 초기화 시각(realtime.*.resetsAt)으로 cfg의 초기화 시각을 맞춘다.
 // cfg.fiveHourResetAt/weekResetAt은 화면 표시뿐 아니라 구간 경계(currentFiveHourStartMs 등) 계산에도
 // 쓰이므로, 실측값이 있는데도 내부적으로는 보정(calibrate) 추정치를 계속 쓰면 표시값과 실제 집계 구간이
@@ -172,7 +179,12 @@ function syncResetTimesFromRealtime(realtime) {
     cfg.weekResetAt = realtime.weekly.resetsAt;
     changed = true;
   }
-  if (changed) configStore.saveConfig(cfg);
+  if (changed) {
+    configStore.saveConfig(cfg);
+    // 주간 초기화 시각을 이제 막 알게 됐다면, 위상을 몰라 보류해둔 주간 백필을 여기서 수행한다.
+    // (이미 끝났으면 즉시 반환하므로 매주 초기화 시각이 갱신될 때마다 호출돼도 부담이 없다.)
+    backfillUsageModelIfNeeded();
+  }
 }
 
 function computePercents() {
@@ -188,14 +200,16 @@ function computePercents() {
 
   // 진행 중인 구간의 (경과율 -> 누적비용) 샘플을 모아둔다. 구간이 끝나는 시점에만 실제 학습에 반영된다.
   // (이 학습은 "예상 마감 사용률" 예측용이고, 화면에 보여주는 현재 사용률과는 무관하다.)
+  const idleSec = currentIdleSec();
   if (!fiveHourPending) {
     usageModel.recordSample(
       'fiveHour',
       (Date.now() - currentFiveHourStartMs()) / FIVE_HOUR_MS,
-      fiveHourCost
+      fiveHourCost,
+      idleSec
     );
   }
-  usageModel.recordSample('weekly', (Date.now() - currentWeekStartMs()) / WEEK_MS, weeklyCost);
+  usageModel.recordSample('weekly', (Date.now() - currentWeekStartMs()) / WEEK_MS, weeklyCost, idleSec);
 
   // Claude Code 터미널의 statusLine 훅(statuslineBridge.js)이 남겨둔, Anthropic 서버가 직접 계산한
   // 실제 한도 %만 현재 사용률로 쓴다. 비용 기반 추정은 부정확해서 더 이상 대체값으로 쓰지 않으며,
@@ -295,12 +309,18 @@ function computeAdviceStats() {
   const fiveHourCost = p.fiveHourPending ? 0 : costStore.getCostSince(currentFiveHourStartMs() / 1000);
   const weeklyCost = costStore.getCostSince(currentWeekStartMs() / 1000);
 
+  // 유휴시간이 길면 이 구간의 사용이 사실상 끝난 것으로 보고 예측을 현재값 쪽으로 당긴다.
+  // (곡선 모델만으로는 "이미 끝난 구간"을 표현할 수 없어 구조적으로 과대예측된다 - usageModel 참고.)
+  const idleSec = currentIdleSec();
+
   const fiveHourModelPred =
     !p.fiveHourPending && fiveHourElapsedMs != null
-      ? usageModel.predictFinalCost('fiveHour', fiveHourElapsedMs / FIVE_HOUR_MS, fiveHourCost)
+      ? usageModel.predictFinalCost('fiveHour', fiveHourElapsedMs / FIVE_HOUR_MS, fiveHourCost, idleSec)
       : null;
   const weeklyModelPred =
-    weeklyElapsedMs != null ? usageModel.predictFinalCost('weekly', weeklyElapsedMs / WEEK_MS, weeklyCost) : null;
+    weeklyElapsedMs != null
+      ? usageModel.predictFinalCost('weekly', weeklyElapsedMs / WEEK_MS, weeklyCost, idleSec)
+      : null;
 
   // "페이스 배율" = 지금 페이스가 유지되면 최종적으로 지금의 몇 배가 될지. 비율이라 단위와 무관하므로
   // 실제 % (ground truth)에 그대로 곱해 "예상 마감 %"를 구한다. 현재 %가 실측값 없이 null이면
@@ -692,23 +712,61 @@ function openCalibrateWindow() {
   });
 }
 
-// 앱을 처음 켰을 때 딱 한 번, costStore 캐시에 남아있는 과거 사용 기록(최대 8일치)으로
-// 개인화 모델을 미리 학습시킨다. 이게 없으면 5시간 한도는 최소 3구간(길게는 며칠), 주간 한도는
-// 최소 3주를 실시간으로 기다려야 모델이 쓰이기 시작하는데, 이미 캐시에 있는 기록만으로도
-// 상당 부분을 즉시 메꿀 수 있다. 재실행할 때마다 같은 과거 데이터를 중복 학습하지 않도록
-// cfg.usageModelBackfilledAt으로 한 번만 실행되게 막는다.
+// 실측 주간 초기화 시각이 매주 몇 분씩 흔들리더라도 그때마다 학습을 버리지 않도록 두는 여유.
+const WEEK_PHASE_TOLERANCE_MS = 60 * 60 * 1000;
+
+// 과거 사용 기록으로 개인화 모델을 미리 학습시킨다. 주간 모델은 완료된 구간이 1주에 하나씩만
+// 생겨서 실시간으로만 배우면 한 달이 지나야 쓸 만해지는데, costs.jsonl에는 보통 그보다 긴 기록이
+// 이미 남아있다. 그래서 8일치 캐시가 아니라 원본 로그 전체(getHistoricalEvents)를 학습에 쓴다.
+//
+// 주간은 실제 초기화 시각(cfg.weekResetAt)을 알아야 실시간과 같은 격자로 구간을 자를 수 있다.
+// 아직 모르는 동안에는 5시간만 먼저 하고 주간은 보류했다가, statusline 훅의 실측값으로
+// weekResetAt이 채워지는 순간(syncResetTimesFromRealtime)에 다시 호출되어 학습한다.
+//
+// 같은 기록을 두 번 학습하면 표본 수만 부풀어 신뢰도가 과대평가되므로, 한도별 완료 여부를
+// cfg.usageModelBackfill에 남겨 한 번씩만 실행한다. 모델 버전이 오르면(학습 방식 변경)
+// usageModel이 기존 학습을 폐기하므로 백필도 새 버전 기준으로 다시 수행한다.
 function backfillUsageModelIfNeeded() {
-  if (cfg.usageModelBackfilledAt) return;
-  costStore.scanAndUpdate();
+  const saved = cfg.usageModelBackfill;
+  const done =
+    saved && saved.version === usageModel.MODEL_VERSION
+      ? { ...saved }
+      : { version: usageModel.MODEL_VERSION, fiveHourAt: null, weeklyAt: null };
+
+  const phase = usageModel.windowPhaseOf(cfg.weekResetAt, WEEK_MS);
+  // 주간 초기화 시각이 7일의 배수가 아닌 만큼 바뀌면(수동 보정값 -> 실측값 교체 등) 격자 자체가
+  // 달라진 것이라, 이전 위상으로 배운 곡선은 경과율 축이 어긋난다. 버리고 새 위상으로 다시 배운다.
+  const phaseChanged =
+    done.weeklyAt != null &&
+    phase != null &&
+    !usageModel.isSameWindowPhase(done.weeklyPhase, phase, WEEK_MS, WEEK_PHASE_TOLERANCE_MS);
+  const needFiveHour = !done.fiveHourAt;
+  const needWeekly = phase != null && (!done.weeklyAt || phaseChanged);
+  if (!needFiveHour && !needWeekly) return;
+
+  const events = costStore.getHistoricalEvents();
+  // 로그가 아직 없거나 읽지 못한 경우 - 완료로 표시하지 않고 다음 기회(다음 실행/다음 실측값)에 재시도한다.
+  if (events.length === 0) return;
+
   const nowSec = Date.now() / 1000;
-  const events = costStore.getAllEvents();
-  const fiveHourWindows = usageModel.backfillFromEvents('fiveHour', FIVE_HOUR_MS / 1000, events, nowSec);
-  const weeklyWindows = usageModel.backfillFromEvents('weekly', WEEK_MS / 1000, events, nowSec);
-  cfg.usageModelBackfilledAt = Date.now();
+  if (needFiveHour) {
+    const n = usageModel.backfillFromEvents('fiveHour', FIVE_HOUR_MS / 1000, events, nowSec);
+    done.fiveHourAt = Date.now();
+    console.log(`[usageModel] 과거 기록 백필 - 5시간 구간 ${n}개 학습에 반영.`);
+  }
+  if (needWeekly) {
+    if (phaseChanged) {
+      usageModel.resetKind('weekly');
+      console.log('[usageModel] 주간 초기화 시각의 위상이 바뀌어 기존 주간 학습을 폐기하고 다시 배운다.');
+    }
+    const n = usageModel.backfillFromEvents('weekly', WEEK_MS / 1000, events, nowSec, cfg.weekResetAt / 1000);
+    done.weeklyAt = Date.now();
+    done.weeklyPhase = phase;
+    console.log(`[usageModel] 과거 기록 백필 - 주간 구간 ${n}개 학습에 반영 (초기화 시각 격자 기준).`);
+  }
+
+  cfg.usageModelBackfill = done;
   configStore.saveConfig(cfg);
-  console.log(
-    `[usageModel] 과거 기록으로 백필 완료 - 5시간 구간 ${fiveHourWindows}개, 주간 구간 ${weeklyWindows}개 학습에 반영.`
-  );
 }
 
 // statusLine에 등록된 명령이 클로미터 것인지 판별하는 표식. 1.0.0은 `node "...statuslineBridge.js"`를,
