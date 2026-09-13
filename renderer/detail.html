@@ -69,6 +69,9 @@
   .advice-card-headline.hits-limit { color: #ff8a65; }
   .advice-card-headline.unknown { font-size: 13px; font-weight: 400; color: #7a828a; }
   .advice-card-sub { font-size: 11px; color: #9aa0a6; margin-top: 2px; }
+  /* 다른 한도와의 연결(5시간 <-> 주간 환산). 표본이 부족하면 통째로 비어서 자리를 차지하지 않는다. */
+  .advice-card-link { font-size: 11px; color: #7cc4ff; margin-top: 4px; }
+  .advice-card-link:empty { display: none; }
   .advice-card-body { font-size: 13px; line-height: 1.5; margin-top: 6px; }
   .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
   button {
@@ -96,12 +99,14 @@
       <div class="advice-card-title" id="fiveHourCardTitle">5시간 한도</div>
       <div class="advice-card-headline" id="fiveHourHeadline"></div>
       <div class="advice-card-sub" id="fiveHourSub"></div>
+      <div class="advice-card-link" id="fiveHourLink"></div>
       <div class="advice-card-body" id="fiveHourAdvice"></div>
     </div>
     <div class="advice-card">
       <div class="advice-card-title" id="weeklyCardTitle">주간 한도</div>
       <div class="advice-card-headline" id="weeklyHeadline"></div>
       <div class="advice-card-sub" id="weeklySub"></div>
+      <div class="advice-card-link" id="weeklyLink"></div>
       <div class="advice-card-body" id="weeklyAdvice"></div>
     </div>
   </div>

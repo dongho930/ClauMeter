@@ -58,15 +58,19 @@ function setPace(tickEl, infoEl, pct, pacePct) {
 // 색상 판정은 언어와 무관한 영어 코드로만 하고(상세창의 riskBadge와 같은 규칙), 문구만 번역한다.
 const PACE_RISK_COLOR = { safe: '#43a047', caution: '#ffb300', danger: '#e53935' };
 
-function setPaceBadge(risk) {
+// limit은 그 판정을 부른 한도('fiveHour' | 'weekly'). 어느 쪽이 먼저 막는지가 대응 방법을 가른다 -
+// 5시간이면 잠깐 쉬면 새 구간이 열리고, 주간이면 며칠에 걸쳐 줄여야 한다. 한도 이름은 게이지에
+// 이미 쓰는 문자열을 그대로 재사용한다.
+function setPaceBadge(risk, limit) {
   if (!risk || !STR || !PACE_RISK_COLOR[risk]) {
     paceBadge.hidden = true;
     return;
   }
   paceBadge.hidden = false;
   paceBadgeDot.style.backgroundColor = PACE_RISK_COLOR[risk];
-  paceBadgeLabel.textContent =
-    risk === 'danger' ? STR.riskDanger : risk === 'caution' ? STR.riskCaution : STR.riskSafe;
+  const label = risk === 'danger' ? STR.riskDanger : risk === 'caution' ? STR.riskCaution : STR.riskSafe;
+  const limitName = limit === 'weekly' ? STR.thisWeekLabel : limit === 'fiveHour' ? STR.fiveHourLabel : null;
+  paceBadgeLabel.textContent = limitName ? `${label} · ${limitName}` : label;
   paceBadgeLabel.style.color = risk === 'safe' ? '#9aa0a6' : PACE_RISK_COLOR[risk];
 }
 
@@ -164,7 +168,7 @@ window.api.onUsageUpdate((data) => {
   setRow(weeklyFill, weeklyPct, data.weeklyPct);
   setPace(fiveHourPaceTick, fiveHourPaceInfo, data.fiveHourPct, data.fiveHourPacePct);
   setPace(weeklyPaceTick, weeklyPaceInfo, data.weeklyPct, data.weeklyPacePct);
-  setPaceBadge(data.paceRisk);
+  setPaceBadge(data.paceRisk, data.paceRiskLimit);
   fiveHourResetInfo.textContent = data.fiveHourPending
     ? (STR ? STR.resetPending : '')
     : formatRemaining(data.fiveHourResetInMs);

@@ -102,4 +102,71 @@ function getAll() {
   return readAll().sort((a, b) => a.capturedAt - b.capturedAt);
 }
 
-module.exports = { record, getAll, HISTORY_PATH };
+// ---------------------------------------------------------------------------
+// 두 한도를 잇는 환산 비율: 5시간 %p 1만큼 쓸 때 주간 %p가 얼마나 깎이는가.
+//
+// 같은 사용이 두 게이지를 동시에 깎으므로 둘은 고정 비율로 묶여 있다. 이 비율을 알면 "남은 주간
+// 여유 = 5시간 구간 몇 번분"처럼 두 한도를 하나의 단위로 환산할 수 있다.
+//
+// 상수로 박지 않고 사용자별로 학습한다 - 요금제나 Opus/Sonnet 비중에 따라 달라질 수 있는데,
+// 지금 표본으로는 그 영향을 분리할 수 없기 때문이다. 대신 표본이 부실하면 아예 null을 돌려줘서
+// 호출부가 환산 표시를 숨기게 한다(예측 데드존과 같은 원칙).
+//
+// 측정(2026-09-13, 5시간 구간 5개): 0.085 ~ 0.111, 중앙값 0.102. 즉 5시간을 꽉 채우면 주간이
+// 약 10%p 깎이고, 주간 한도는 5시간 구간 약 10번분이다.
+
+// 주간 %는 정수로 반올림돼 들어온다. 5시간 변화폭이 작으면 그 ±0.5%p가 비율을 통째로 흔들어서
+// (변화폭 9%p면 비율 오차가 ±0.055 - 값 자체만 한 크기다) 변화폭이 큰 구간만 표본으로 쓴다.
+const RATIO_MIN_FIVE_HOUR_DELTA = 50;
+const RATIO_MIN_SAMPLES = 2;
+const RATIO_CACHE_MS = 10 * 60 * 1000; // 이력 전체를 다시 파싱하므로 1초 폴링마다 돌릴 수 없다
+
+let ratioCache = null; // { value, computedAt }
+
+// 한 5시간 구간 안의 기록들에서 (5시간 변화량, 주간 변화량) 한 쌍을 뽑는다. 쓸 수 없으면 null.
+function ratioSampleOf(group) {
+  const usable = group.filter((r) => r.fiveHourPct != null && r.weeklyPct != null);
+  if (usable.length < 2) return null;
+
+  const first = usable[0];
+  const last = usable[usable.length - 1];
+  // 구간 도중에 주가 바뀌면 주간 %가 0으로 떨어져서 변화량이 음수가 된다 - 그 구간은 버린다.
+  if (first.weeklyResetAt !== last.weeklyResetAt) return null;
+
+  const deltaFive = last.fiveHourPct - first.fiveHourPct;
+  const deltaWeekly = last.weeklyPct - first.weeklyPct;
+  if (deltaFive < RATIO_MIN_FIVE_HOUR_DELTA || deltaWeekly < 0) return null;
+  return deltaWeekly / deltaFive;
+}
+
+// 표본이 적어 평균은 이상치 하나에 끌려가므로 중앙값을 쓴다.
+function median(values) {
+  const sorted = values.slice().sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+// 5시간 %p 1당 주간 %p. 표본이 부족하면 null.
+function getWeeklyPerFiveHourRatio() {
+  const now = Date.now();
+  if (ratioCache && now - ratioCache.computedAt < RATIO_CACHE_MS) return ratioCache.value;
+
+  const byWindow = new Map();
+  for (const r of getAll()) {
+    if (r.fiveHourResetAt == null) continue;
+    if (!byWindow.has(r.fiveHourResetAt)) byWindow.set(r.fiveHourResetAt, []);
+    byWindow.get(r.fiveHourResetAt).push(r);
+  }
+
+  const samples = [];
+  for (const group of byWindow.values()) {
+    const sample = ratioSampleOf(group);
+    if (sample != null) samples.push(sample);
+  }
+
+  const value = samples.length >= RATIO_MIN_SAMPLES ? median(samples) : null;
+  ratioCache = { value, computedAt: now };
+  return value;
+}
+
+module.exports = { record, getAll, getWeeklyPerFiveHourRatio, HISTORY_PATH };

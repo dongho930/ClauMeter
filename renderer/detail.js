@@ -18,6 +18,8 @@ const fiveHourHeadline = document.getElementById('fiveHourHeadline');
 const weeklyHeadline = document.getElementById('weeklyHeadline');
 const fiveHourSub = document.getElementById('fiveHourSub');
 const weeklySub = document.getElementById('weeklySub');
+const fiveHourLink = document.getElementById('fiveHourLink');
+const weeklyLink = document.getElementById('weeklyLink');
 const refreshBtn = document.getElementById('refreshBtn');
 const detailHeadingEl = document.getElementById('detailHeading');
 const fiveHourCardTitleEl = document.getElementById('fiveHourCardTitle');
@@ -92,6 +94,25 @@ function renderAdviceHeadline(headlineEl, subEl, hasData, projectedPct, timeToLi
   subEl.textContent = `${STR.projectedLabel}${projectedPct}% · ${STR.remainingLabel}${remaining}`;
 }
 
+// 두 한도를 잇는 줄. 같은 사용이 두 게이지를 동시에 깎으므로, 한쪽 게이지만 봐서는 판단이 어긋난다.
+//   5시간 카드: 이 구간을 끝까지 쓰면 주간이 어디까지 가는지 (게이지가 여유로워 보여도 다 쓰면 안 되는 경우)
+//   주간 카드: 남은 주간 여유가 5시간 구간 몇 번분인지 (%p보다 훨씬 직관적인 단위)
+// 환산 비율은 실측 이력에서 학습하므로 표본이 부족하면 값이 null이고, 그때는 줄을 비워서 숨긴다.
+function renderLinkLines(stats) {
+  fiveHourLink.textContent =
+    stats.weeklyIfFiveHourFull != null ? fmt(STR.ifFiveHourFull, { x: stats.weeklyIfFiveHourFull }) : '';
+
+  if (stats.weeklyWindowsLeft == null) {
+    weeklyLink.textContent = '';
+    return;
+  }
+  const windows = fmt(STR.weeklyInWindows, { h: stats.weeklyHeadroomPct, n: stats.weeklyWindowsLeft });
+  weeklyLink.textContent =
+    stats.weeklyWindowsPerDay != null
+      ? `${windows} (${fmt(STR.weeklyPerDay, { r: stats.weeklyWindowsPerDay })})`
+      : windows;
+}
+
 function showAdviceCards(advice, stats) {
   adviceBox.style.display = 'none';
   adviceBox.classList.remove('error');
@@ -103,6 +124,7 @@ function showAdviceCards(advice, stats) {
   fiveHourAdvice.textContent = advice.fiveHour || '';
   weeklyAdvice.textContent = advice.weekly || '';
   if (!stats) return;
+  renderLinkLines(stats);
   renderAdviceHeadline(
     fiveHourHeadline, fiveHourSub,
     stats.fiveHourHasData, stats.fiveHourProjectedPct, stats.fiveHourTimeToLimit,

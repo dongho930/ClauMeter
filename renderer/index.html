@@ -28,8 +28,10 @@
     align-items: center;
     margin-bottom: 8px;
   }
-  .title { font-size: 12px; font-weight: 600; }
-  .header-right { display: flex; align-items: center; gap: 6px; -webkit-app-region: no-drag; }
+  .title { font-size: 12px; font-weight: 600; flex-shrink: 0; }
+  /* min-width:0이 없으면 flex 항목이 내용보다 작아지지 않아서, 배지 문구가 긴 언어
+     (예: 폴란드어 "Niebezpiecznie · W tym tygodniu")에서 버튼들이 위젯 밖으로 밀려난다. */
+  .header-right { display: flex; align-items: center; gap: 6px; min-width: 0; -webkit-app-region: no-drag; }
   .safe-controls { display: flex; align-items: center; gap: 6px; }
   /* 페이스 상태 배지. safe-controls 밖에 둬야 한다 - 안에 넣으면 고정(클릭스루) 모드에서
      마우스를 통과시키는 영역이 이 배지만큼 넓어져서, 의도치 않은 곳에서 클릭이 위젯에 닿는다. */
@@ -37,16 +39,23 @@
     display: flex;
     align-items: center;
     gap: 4px;
+    min-width: 0; /* 자리가 모자라면 글자를 줄여서라도 버튼을 지킨다 */
     font-size: 10px;
     color: #9aa0a6;
-    white-space: nowrap;
   }
+  /* 글자가 잘려도 색 점은 남아야 신호가 유지된다 - 점은 절대 줄이지 않는다. */
   .pace-badge-dot {
+    flex-shrink: 0;
     width: 7px;
     height: 7px;
     border-radius: 50%;
     background: #43a047;
     transition: background-color 0.4s ease;
+  }
+  .pace-badge-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .updated { font-size: 10px; color: #9aa0a6; }
   .info-btn {
@@ -128,7 +137,7 @@
       <div class="header-right" id="headerRight">
         <span class="pace-badge" id="paceBadge" hidden>
           <span class="pace-badge-dot" id="paceBadgeDot"></span>
-          <span id="paceBadgeLabel"></span>
+          <span class="pace-badge-label" id="paceBadgeLabel"></span>
         </span>
         <div class="safe-controls" id="safeControls">
           <button class="info-btn" id="clickThroughBtn"><svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8-2"/></svg></button>

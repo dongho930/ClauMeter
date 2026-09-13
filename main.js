@@ -392,6 +392,30 @@ function computeAdviceStats() {
   // 속도 배율은 화면에 %로 보이므로 여기서 정수 %로 굳힌다. 0%는 "멈추라"는 뜻이 되어버려서 최소 1%.
   const slowdownPct = (ratio) => (ratio == null ? null : Math.max(1, Math.round(ratio * 100)));
 
+  // 두 한도를 잇는 환산. 표본이 부족하면 비율이 null이고, 아래 값들도 전부 null이 되어 화면에서 숨는다.
+  const perFiveHour = usageHistory.getWeeklyPerFiveHourRatio();
+  // 5시간 한도를 0%에서 100%까지 꽉 채울 때 깎이는 주간 %p. 화면에 보이는 "구간 1번분"의 단위다.
+  const weeklyCostOfFullWindow = perFiveHour != null ? perFiveHour * 100 : null;
+  const canConvert = weeklyCostOfFullWindow > 0 && p.weeklyPct != null;
+
+  // (B) 남은 주간 여유가 5시간 구간 몇 번분인지, 그리고 남은 기간 동안 하루 몇 번 꼴인지.
+  const weeklyHeadroomPct = p.weeklyPct != null ? Math.max(0, Math.round((100 - p.weeklyPct) * 10) / 10) : null;
+  const weeklyWindowsLeft = canConvert ? weeklyHeadroomPct / weeklyCostOfFullWindow : null;
+  // 달력상 남은 5시간 슬롯 수는 쓰지 않는다 - 자는 시간이 전부 포함돼서 의미가 없다. 대신 "하루 몇 번
+  // 꼴"로 환산한다. 남은 기간이 반나절도 안 되면 하루 단위 환산 자체가 과장되므로 그때는 내보내지 않는다.
+  const weeklyDaysLeft = p.weeklyResetInMs != null ? p.weeklyResetInMs / 86400000 : null;
+  const weeklyWindowsPerDay =
+    weeklyWindowsLeft != null && weeklyDaysLeft != null && weeklyDaysLeft >= 0.5
+      ? Math.round((weeklyWindowsLeft / weeklyDaysLeft) * 10) / 10
+      : null;
+
+  // (C) 지금 5시간 구간을 100%까지 쓰면 이번 주가 몇 %가 되는지. 5시간 게이지만 보면 여유로워 보여도
+  // 그 여유를 다 쓰면 주간이 어디까지 가는지가 실제로 중요한 판단 재료다.
+  const weeklyIfFiveHourFull =
+    canConvert && p.fiveHourPct != null && !p.fiveHourPending && p.fiveHourPct < 100
+      ? Math.round((p.weeklyPct + perFiveHour * (100 - p.fiveHourPct)) * 10) / 10
+      : null;
+
   return {
     fiveHourPct: p.fiveHourPct != null ? Math.round(p.fiveHourPct * 10) / 10 : null,
     fiveHourHasData: p.fiveHourHasData,
@@ -411,6 +435,11 @@ function computeAdviceStats() {
     weeklyAtLimitNow: weekly.timeToLimitMs === 0,
     weeklySlowdownPct: slowdownPct(weekly.slowdownRatio),
     weeklyModelBased: weekly.modelBased,
+    // 두 한도 환산 (표본 부족이면 전부 null - 화면에서 해당 줄이 사라진다)
+    weeklyHeadroomPct,
+    weeklyWindowsLeft: weeklyWindowsLeft != null ? Math.round(weeklyWindowsLeft * 10) / 10 : null,
+    weeklyWindowsPerDay,
+    weeklyIfFiveHourFull,
     // 과거 구간들에서 모델 예측 vs 단순 선형 예측이 실제값 대비 평균적으로 얼마나 틀렸는지 (검증용, 없으면 null)
     fiveHourAccuracy: usageModel.getAccuracyStats('fiveHour'),
     weeklyAccuracy: usageModel.getAccuracyStats('weekly'),
@@ -463,9 +492,28 @@ function buildAdvicePrompt(stats) {
     stats.weeklySlowdownPct
   );
 
+  // 두 한도는 독립이 아니다 - 같은 사용이 둘을 동시에 깎는다. 그 연결을 모델에게 알려주지 않으면
+  // 5시간과 주간에 대해 서로 모순되는 조언(예: "5시간 여유 있으니 계속" + "주간 아끼세요")을 낸다.
+  const linkLines = [];
+  if (stats.weeklyWindowsLeft != null) {
+    linkLines.push(
+      `[Link] The two limits share the same usage. The remaining weekly headroom (${stats.weeklyHeadroomPct}%) ` +
+        `is worth about ${stats.weeklyWindowsLeft} more fully-used 5-hour windows` +
+        (stats.weeklyWindowsPerDay != null ? `, i.e. about ${stats.weeklyWindowsPerDay} per day for the rest of the week` : '')
+    );
+  }
+  if (stats.weeklyIfFiveHourFull != null) {
+    linkLines.push(
+      `[Link] Using the current 5-hour window all the way to 100% would put the weekly limit at ` +
+        `${stats.weeklyIfFiveHourFull}%`
+    );
+  }
+
   return [
     'You are a Claude Code usage-pacing coach. The numbers below are already computed - do not recompute or change them.',
     `Write in ${languageName}.`,
+    'The 5-hour and weekly limits are NOT independent: the same usage counts against both. Any [Link] lines below say how they relate - your two pieces of advice must be consistent with each other.',
+    'When the weekly limit is the one in trouble, say so even if the 5-hour limit looks comfortable: slowing down inside this 5-hour window cannot fix a week-level overrun.',
     'The app already shows the user every number above the text you write, so do NOT restate them. Write what to DO instead.',
     'Each per-limit field must be exactly ONE short imperative sentence, at most 20 words, telling the user what to do right now (for example: keep going, wrap up the current task, switch to a lighter model, or save the heavy work for after the reset).',
     `For any limit marked as having no data, do not give advice for it - just briefly say (in ${languageName}) that there is no data.`,
@@ -476,6 +524,7 @@ function buildAdvicePrompt(stats) {
     '',
     fiveHourLine,
     weeklyLine,
+    ...linkLines,
   ].join('\n');
 }
 
@@ -554,14 +603,15 @@ function openDetailWindow() {
     return;
   }
 
-  // 조언 카드마다 헤드라인 아래 보조 한 줄(남은 시간/줄여야 할 속도)이 붙으면서 480으로는 주간 카드가
-  // 잘렸다. 내용이 가장 길 때(두 한도 모두 한도 도달 + 정확도 줄까지) 700이면 스크롤 없이 들어간다.
+  // 조언 카드마다 헤드라인 아래 보조 줄(남은 시간/줄여야 할 속도, 다른 한도와의 환산)이 붙으면서
+  // 480으로는 주간 카드가 잘렸다. 내용이 가장 길 때(두 한도 모두 한도 도달 + 환산 줄 + 정확도 줄까지)
+  // 760이면 스크롤 없이 들어간다.
   // 다만 세로 768 같은 화면에서는 700이 작업 영역을 넘으므로, 넘칠 때만 작업 영역에 맞춘다
   // (resizable:false라 사용자가 직접 줄일 수 없어서 창이 화면 밖으로 나가면 손쓸 방법이 없다).
   const { workArea } = screen.getPrimaryDisplay();
   detailWindow = new BrowserWindow({
     width: 420,
-    height: Math.min(700, Math.max(420, workArea.height - 80)),
+    height: Math.min(760, Math.max(420, workArea.height - 80)),
     useContentSize: true,
     resizable: false,
     minimizable: true,
@@ -588,7 +638,7 @@ function openDetailWindow() {
   });
 }
 
-// 위젯 헤더 배지에 쓸 한 글자짜리 요약. 두 한도 중 더 나쁜 쪽을 대표로 보여준다.
+// 위젯 헤더 배지에 쓸 한 줄 요약.
 //   danger  = 이 속도면 초기화 전에 한도에 도달한다 (예상 마감 > 100%)
 //   caution = 기준선을 넘어섰다 (남은 시간 대비 과소비 중)
 //   safe    = 기준선 아래
@@ -603,10 +653,19 @@ function paceRiskOf(pct, pacePct, projectedPct) {
 
 const RISK_RANK = { safe: 0, caution: 1, danger: 2 };
 
-function worstRisk(a, b) {
-  if (a == null) return b;
-  if (b == null) return a;
-  return RISK_RANK[a] >= RISK_RANK[b] ? a : b;
+// 두 한도 중 "먼저 막는 쪽"을 고르고 어느 쪽인지도 같이 돌려준다. 단순히 더 나쁜 코드만 고르면
+// 두 방향이 대칭으로 보이는데, 실제 결과는 전혀 다르다.
+//   - 5시간 초과 + 주간 여유 -> 최대 5시간 막혔다가 새 구간이 통째로 열린다. 게다가 5시간 여유분은
+//     안 쓰면 소멸이라 다 쓰는 게 오히려 정상이다.
+//   - 주간 초과 + 5시간 여유 -> 지금 속도를 줄여도 이번 구간 안에서는 해결되지 않는다. 며칠에 걸쳐
+//     줄여야 한다.
+// 그래서 심각도가 같으면 주간이 이긴다 - 결과가 길고 이번 세션 안에서 되돌릴 수 없기 때문이다.
+function bindingRisk(fiveHourRisk, weeklyRisk) {
+  const rank = (r) => (r == null ? -1 : RISK_RANK[r]);
+  if (rank(weeklyRisk) >= rank(fiveHourRisk)) {
+    return weeklyRisk == null ? null : { risk: weeklyRisk, limit: weeklyRisk === 'safe' ? null : 'weekly' };
+  }
+  return { risk: fiveHourRisk, limit: fiveHourRisk === 'safe' ? null : 'fiveHour' };
 }
 
 function pushUsageUpdate() {
@@ -634,17 +693,20 @@ function pushUsageUpdate() {
     idleSec
   );
 
+  const binding = bindingRisk(
+    // 아직 시작하지 않은 5시간 구간은 pct가 0으로 채워져 있을 뿐 실제 신호가 아니라서 제외한다.
+    paceRiskOf(
+      percents.fiveHourPending ? null : percents.fiveHourPct,
+      percents.fiveHourPacePct,
+      fiveHour.projectedPct
+    ),
+    paceRiskOf(percents.weeklyPct, percents.weeklyPacePct, weekly.projectedPct)
+  );
+
   mainWindow.webContents.send('usage-update', {
     ...percents,
-    paceRisk: worstRisk(
-      // 아직 시작하지 않은 5시간 구간은 pct가 0으로 채워져 있을 뿐 실제 신호가 아니라서 제외한다.
-      paceRiskOf(
-        percents.fiveHourPending ? null : percents.fiveHourPct,
-        percents.fiveHourPacePct,
-        fiveHour.projectedPct
-      ),
-      paceRiskOf(percents.weeklyPct, percents.weeklyPacePct, weekly.projectedPct)
-    ),
+    paceRisk: binding ? binding.risk : null,
+    paceRiskLimit: binding ? binding.limit : null,
   });
 }
 
