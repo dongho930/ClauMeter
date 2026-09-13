@@ -31,6 +31,30 @@
   .title { font-size: 12px; font-weight: 600; flex-shrink: 0; }
   .header-right { display: flex; align-items: center; gap: 6px; min-width: 0; -webkit-app-region: no-drag; }
   .safe-controls { display: flex; align-items: center; gap: 6px; }
+
+  /* 5시간/주간 페이스 상태를 따로 보여준다. safe-controls 밖에 둬야 한다 - 안에 넣으면
+     고정(클릭스루) 모드에서 마우스를 통과시키는 영역이 이만큼 넓어져서, 의도치 않은 곳에서
+     클릭이 위젯에 닿는다. */
+  .pace-states { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 10px; }
+  .pace-state { display: flex; align-items: center; gap: 4px; min-width: 0; }
+  /* 한국어/일본어는 넉넉하지만 독일어("Diese Woche")나 폴란드어("W tym tygodniu")는 자리를
+     넘긴다. 그때는 라벨만 줄어들고 점과 버튼은 그대로 남게 한다. */
+  .pace-state-label {
+    color: #9aa0a6;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* 두 한도가 같은 상태일 때 어느 쪽을 먼저 봐야 하는지(먼저 막는 쪽)를 라벨 밝기로만 구분한다. */
+  .pace-state.binding .pace-state-label { color: #e6e6e6; font-weight: 600; }
+  .pace-state-dot {
+    flex-shrink: 0;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #43a047;
+    transition: background-color 0.4s ease;
+  }
   .updated { font-size: 10px; color: #9aa0a6; }
   .info-btn {
     background: transparent;
@@ -62,27 +86,8 @@
     align-items: baseline;
     margin-bottom: 3px;
   }
-  /* 상태 점 + 한도 이름 + 상태 단어. 상태를 헤더에 하나만 두면 두 한도 중 하나밖에 못 보여주므로,
-     각 게이지 바로 옆에 둬서 둘 다 보이게 한다. */
-  .row-head { display: flex; align-items: center; gap: 5px; min-width: 0; }
   .row-label { font-size: 10px; color: #9aa0a6; }
-  /* 두 한도가 같은 상태일 때 어느 쪽을 먼저 봐야 하는지(먼저 막는 쪽)를 라벨 밝기로만 구분한다. */
-  .row-head.binding .row-label { color: #e6e6e6; font-weight: 600; }
-  .row-state-dot {
-    flex-shrink: 0;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: #43a047;
-    transition: background-color 0.4s ease;
-  }
-  .row-state {
-    font-size: 10px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .row-pct { font-size: 12px; font-weight: 700; flex-shrink: 0; }
+  .row-pct { font-size: 12px; font-weight: 700; }
   /* 왼쪽=기준선 안내, 오른쪽=초기화까지 남은 시간. 기준선 안내가 비어도 남은 시간은 오른쪽에 고정된다. */
   .reset-info {
     margin-top: 4px;
@@ -128,6 +133,16 @@
     <div class="header">
       <span class="title" id="titleText">Claude 사용량</span>
       <div class="header-right" id="headerRight">
+        <span class="pace-states" id="paceStates" hidden>
+          <span class="pace-state" id="fiveHourState" hidden>
+            <span class="pace-state-label" id="fiveHourStateLabel"></span>
+            <span class="pace-state-dot" id="fiveHourStateDot"></span>
+          </span>
+          <span class="pace-state" id="weeklyState" hidden>
+            <span class="pace-state-label" id="weeklyStateLabel"></span>
+            <span class="pace-state-dot" id="weeklyStateDot"></span>
+          </span>
+        </span>
         <div class="safe-controls" id="safeControls">
           <button class="info-btn" id="clickThroughBtn"><svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8-2"/></svg></button>
         </div>
@@ -139,11 +154,7 @@
     </div>
     <div class="row">
       <div class="row-top">
-        <span class="row-head" id="fiveHourHead">
-          <span class="row-state-dot" id="fiveHourStateDot" hidden></span>
-          <span class="row-label" id="fiveHourLabel">5시간</span>
-          <span class="row-state" id="fiveHourState"></span>
-        </span>
+        <span class="row-label" id="fiveHourLabel">5시간</span>
         <span class="row-pct" id="fiveHourPct">0%</span>
       </div>
       <div class="track">
@@ -157,11 +168,7 @@
     </div>
     <div class="row">
       <div class="row-top">
-        <span class="row-head" id="weeklyHead">
-          <span class="row-state-dot" id="weeklyStateDot" hidden></span>
-          <span class="row-label" id="thisWeekLabel">이번 주</span>
-          <span class="row-state" id="weeklyState"></span>
-        </span>
+        <span class="row-label" id="thisWeekLabel">이번 주</span>
         <span class="row-pct" id="weeklyPct">0%</span>
       </div>
       <div class="track">

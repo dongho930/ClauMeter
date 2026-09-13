@@ -54,25 +54,39 @@ function setPace(tickEl, infoEl, pct, pacePct) {
   infoEl.style.color = delta > 0 ? '#ffb300' : '#9aa0a6';
 }
 
-// 각 게이지 옆의 페이스 상태(안전/주의/위험). 상태를 한 곳에만 두면 두 한도 중 하나밖에 못
-// 보여주므로 행마다 따로 그린다. 색상 판정은 언어와 무관한 영어 코드로만 하고(상세창과 같은 규칙),
-// 문구는 상세창 위험도 배지와 같은 문자열을 재사용한다.
+// 헤더의 페이스 상태 표시. 5시간과 주간을 따로 보여준다 - 한 곳에 하나만 두면 둘 중 하나밖에
+// 표현하지 못한다. 색상 판정은 언어와 무관한 영어 코드로만 하고(상세창과 같은 규칙), 한도 이름은
+// 게이지에 이미 쓰는 문자열을 그대로 재사용해서 번역을 새로 만들지 않는다.
+//
+// 게이지 행 안에 두지 않고 헤더에 모은 이유: 행에는 이미 막대 색(절대 사용률)과 기준선 초과
+// 표시가 있어서, 기준이 다른 색이 서로 붙어 있으면 같은 행이 두 가지로 말하는 것처럼 보인다.
 const PACE_RISK_COLOR = { safe: '#43a047', caution: '#ffb300', danger: '#e53935' };
 
-// binding=true면 이 한도가 "먼저 막는 쪽"이다. 두 한도가 같은 상태일 때 어느 쪽을 먼저 봐야 하는지를
-// 라벨 밝기로만 구분한다 - 상태 자체는 두 행에 이미 다 나와 있으므로 그 이상은 필요 없다.
-function setRowState(headEl, dotEl, stateEl, risk, binding) {
-  headEl.classList.toggle('binding', !!binding);
-  if (!risk || !STR || !PACE_RISK_COLOR[risk]) {
-    dotEl.hidden = true;
-    stateEl.textContent = '';
+// binding=true면 이 한도가 "먼저 막는 쪽"이다. 둘 다 보이므로 대개 자명하지만, 두 상태가 같을 때는
+// 어느 쪽을 먼저 봐야 하는지가 여전히 정보라서 라벨 밝기로만 구분한다.
+function setPaceState(stateEl, labelEl, dotEl, label, risk, binding) {
+  stateEl.classList.toggle('binding', !!binding);
+  if (!risk || !PACE_RISK_COLOR[risk]) {
+    stateEl.hidden = true;
     return;
   }
-  dotEl.hidden = false;
+  stateEl.hidden = false;
+  labelEl.textContent = label;
   dotEl.style.backgroundColor = PACE_RISK_COLOR[risk];
-  stateEl.textContent =
-    risk === 'danger' ? STR.riskDanger : risk === 'caution' ? STR.riskCaution : STR.riskSafe;
-  stateEl.style.color = risk === 'safe' ? '#9aa0a6' : PACE_RISK_COLOR[risk];
+}
+
+function setPaceStates(data) {
+  if (!STR) return;
+  setPaceState(
+    fiveHourState, fiveHourStateLabel, fiveHourStateDot,
+    STR.fiveHourLabel, data.fiveHourRisk, data.bindingLimit === 'fiveHour'
+  );
+  setPaceState(
+    weeklyState, weeklyStateLabel, weeklyStateDot,
+    STR.thisWeekLabel, data.weeklyRisk, data.bindingLimit === 'weekly'
+  );
+  // 양쪽 다 보여줄 게 없으면 묶음째 숨겨서 헤더에 빈 자리가 남지 않게 한다.
+  paceStates.hidden = fiveHourState.hidden && weeklyState.hidden;
 }
 
 function formatRemaining(ms) {
@@ -104,12 +118,13 @@ const weeklyPct = document.getElementById('weeklyPct');
 const weeklyResetInfo = document.getElementById('weeklyResetInfo');
 const weeklyPaceTick = document.getElementById('weeklyPaceTick');
 const weeklyPaceInfo = document.getElementById('weeklyPaceInfo');
-const fiveHourHead = document.getElementById('fiveHourHead');
-const fiveHourStateDot = document.getElementById('fiveHourStateDot');
+const paceStates = document.getElementById('paceStates');
 const fiveHourState = document.getElementById('fiveHourState');
-const weeklyHead = document.getElementById('weeklyHead');
-const weeklyStateDot = document.getElementById('weeklyStateDot');
+const fiveHourStateLabel = document.getElementById('fiveHourStateLabel');
+const fiveHourStateDot = document.getElementById('fiveHourStateDot');
 const weeklyState = document.getElementById('weeklyState');
+const weeklyStateLabel = document.getElementById('weeklyStateLabel');
+const weeklyStateDot = document.getElementById('weeklyStateDot');
 const updatedEl = document.getElementById('updated');
 const infoBtn = document.getElementById('infoBtn');
 const settingsBtn = document.getElementById('settingsBtn');
@@ -172,8 +187,7 @@ window.api.onUsageUpdate((data) => {
   setRow(weeklyFill, weeklyPct, data.weeklyPct);
   setPace(fiveHourPaceTick, fiveHourPaceInfo, data.fiveHourPct, data.fiveHourPacePct);
   setPace(weeklyPaceTick, weeklyPaceInfo, data.weeklyPct, data.weeklyPacePct);
-  setRowState(fiveHourHead, fiveHourStateDot, fiveHourState, data.fiveHourRisk, data.bindingLimit === 'fiveHour');
-  setRowState(weeklyHead, weeklyStateDot, weeklyState, data.weeklyRisk, data.bindingLimit === 'weekly');
+  setPaceStates(data);
   fiveHourResetInfo.textContent = data.fiveHourPending
     ? (STR ? STR.resetPending : '')
     : formatRemaining(data.fiveHourResetInMs);
