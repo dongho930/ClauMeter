@@ -165,6 +165,19 @@ function currentIdleSec() {
   return lastSec != null ? Math.max(0, Date.now() / 1000 - lastSec) : null;
 }
 
+// 남은 시간 대비 "지금쯤 여기까지 써도 되는" 기준 사용률(%). 구간 전체를 균등하게 나눠 쓴다고 본
+// 선형 예산선이라, 학습 모델과 무관하게 구간 첫 순간부터 항상 계산된다(데드존/표본 부족이 없다).
+//
+// 학습된 곡선(usageModel)을 여기 쓰면 안 된다. 그 곡선은 "평소 이 시점에 어디까지 썼나"(서술)라서
+// 5시간 구간은 경과율 50%에서 이미 90% 소진이 평균이다 - 기준선으로 쓰면 "2시간 반 지났으니 90%까지
+// 써도 정상"이라고 안내하게 된다. 기준선이 답해야 하는 건 "한도를 넘지 않으려면 어디여야 하나"(규범)
+// 라서 성격이 정반대다. 곡선 기반 예측은 상세창의 "예상 마감 사용률"이 따로 담당한다.
+function pacePctFromResetIn(resetInMs, windowMs) {
+  if (resetInMs == null) return null;
+  const elapsedMs = Math.max(0, Math.min(windowMs, windowMs - resetInMs));
+  return Math.round((elapsedMs / windowMs) * 1000) / 10;
+}
+
 // Anthropic 서버가 알려준 실제 초기화 시각(realtime.*.resetsAt)으로 cfg의 초기화 시각을 맞춘다.
 // cfg.fiveHourResetAt/weekResetAt은 화면 표시뿐 아니라 구간 경계(currentFiveHourStartMs 등) 계산에도
 // 쓰이므로, 실측값이 있는데도 내부적으로는 보정(calibrate) 추정치를 계속 쓰면 표시값과 실제 집계 구간이
@@ -222,24 +235,30 @@ function computePercents() {
   const fiveHourRealPct = !fiveHourPending && realtime.fiveHour ? realtime.fiveHour.usedPercentage : null;
   const weeklyRealPct = realtime.weekly ? realtime.weekly.usedPercentage : null;
 
+  const fiveHourResetInMs = !fiveHourPending
+    ? realtime.fiveHour
+      ? Math.max(0, realtime.fiveHour.resetsAt - Date.now())
+      : cfg.fiveHourResetAt != null
+        ? Math.max(0, cfg.fiveHourResetAt - Date.now())
+        : null
+    : null;
+  const weeklyResetInMs = realtime.weekly
+    ? Math.max(0, realtime.weekly.resetsAt - Date.now())
+    : cfg.weekResetAt != null
+      ? Math.max(0, cfg.weekResetAt - Date.now())
+      : null;
+
   return {
     fiveHourPct: fiveHourPending ? 0 : fiveHourRealPct,
     fiveHourHasData: fiveHourPending || fiveHourRealPct != null,
     fiveHourPending,
     weeklyPct: weeklyRealPct,
     weeklyHasData: weeklyRealPct != null,
-    fiveHourResetInMs: !fiveHourPending
-      ? realtime.fiveHour
-        ? Math.max(0, realtime.fiveHour.resetsAt - Date.now())
-        : cfg.fiveHourResetAt != null
-          ? Math.max(0, cfg.fiveHourResetAt - Date.now())
-          : null
-      : null,
-    weeklyResetInMs: realtime.weekly
-      ? Math.max(0, realtime.weekly.resetsAt - Date.now())
-      : cfg.weekResetAt != null
-        ? Math.max(0, cfg.weekResetAt - Date.now())
-        : null,
+    fiveHourResetInMs,
+    weeklyResetInMs,
+    // 게이지에 그릴 기준선. 아직 시작 안 한 5시간 구간(fiveHourPending)은 경과 자체가 없으므로 null.
+    fiveHourPacePct: fiveHourPending ? null : pacePctFromResetIn(fiveHourResetInMs, FIVE_HOUR_MS),
+    weeklyPacePct: pacePctFromResetIn(weeklyResetInMs, WEEK_MS),
     updatedAt: Date.now(),
   };
 }

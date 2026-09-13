@@ -30,6 +30,30 @@ function setRow(fillEl, pctEl, pct) {
   pctEl.style.color = clamped >= 75 ? colorFor(clamped) : '#e6e6e6';
 }
 
+// 남은 시간 대비 적정 사용률(기준선)을 게이지에 표시한다. pct(현재 사용률)나 pacePct(기준)가 없으면
+// 둘 다 숨긴다 - 비교 대상이 없는 기준선만 덩그러니 남으면 남은 시간 표시와 중복되기만 한다.
+//
+// 기준선을 넘었다는 건 "남은 시간을 다 채우기 전에 한도가 바닥난다"는 뜻이라 경고색(노랑)을 쓰고,
+// 아래에 있으면 평상시 회색이다. 채움(.fill) 자체의 색은 건드리지 않는다 - 그건 한도까지의 절대
+// 거리를 나타내는 신호라서, 페이스 이탈로 덮어쓰면 정작 "한도에 가깝다"는 정보가 사라진다.
+function setPace(tickEl, infoEl, pct, pacePct) {
+  if (pct == null || pacePct == null) {
+    tickEl.hidden = true;
+    infoEl.textContent = '';
+    return;
+  }
+  const clampedPace = Math.max(0, Math.min(pacePct, 100));
+  tickEl.hidden = false;
+  tickEl.style.left = clampedPace + '%';
+
+  // 0.4%p 같은 미세한 변동에 부호가 깜빡이지 않도록 반올림한 값으로만 판정한다. (-0은 0으로 정규화)
+  const delta = Math.round(pct - pacePct) || 0;
+  infoEl.textContent = STR
+    ? fmt(STR.paceInfo, { p: Math.round(pacePct), d: (delta > 0 ? '+' : '') + delta })
+    : '';
+  infoEl.style.color = delta > 0 ? '#ffb300' : '#9aa0a6';
+}
+
 function formatRemaining(ms) {
   if (ms == null || !STR) return '';
   const totalMinutes = Math.max(0, Math.round(ms / 60000));
@@ -52,9 +76,13 @@ function formatRemainingWithDays(ms) {
 const fiveHourFill = document.getElementById('fiveHourFill');
 const fiveHourPct = document.getElementById('fiveHourPct');
 const fiveHourResetInfo = document.getElementById('fiveHourResetInfo');
+const fiveHourPaceTick = document.getElementById('fiveHourPaceTick');
+const fiveHourPaceInfo = document.getElementById('fiveHourPaceInfo');
 const weeklyFill = document.getElementById('weeklyFill');
 const weeklyPct = document.getElementById('weeklyPct');
 const weeklyResetInfo = document.getElementById('weeklyResetInfo');
+const weeklyPaceTick = document.getElementById('weeklyPaceTick');
+const weeklyPaceInfo = document.getElementById('weeklyPaceInfo');
 const updatedEl = document.getElementById('updated');
 const infoBtn = document.getElementById('infoBtn');
 const settingsBtn = document.getElementById('settingsBtn');
@@ -115,6 +143,8 @@ window.api.getClickThroughState().then(applyClickThroughState);
 window.api.onUsageUpdate((data) => {
   setRow(fiveHourFill, fiveHourPct, data.fiveHourPct);
   setRow(weeklyFill, weeklyPct, data.weeklyPct);
+  setPace(fiveHourPaceTick, fiveHourPaceInfo, data.fiveHourPct, data.fiveHourPacePct);
+  setPace(weeklyPaceTick, weeklyPaceInfo, data.weeklyPct, data.weeklyPacePct);
   fiveHourResetInfo.textContent = data.fiveHourPending
     ? (STR ? STR.resetPending : '')
     : formatRemaining(data.fiveHourResetInMs);

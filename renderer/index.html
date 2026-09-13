@@ -64,18 +64,36 @@
   }
   .row-label { font-size: 10px; color: #9aa0a6; }
   .row-pct { font-size: 12px; font-weight: 700; }
+  /* 왼쪽=기준선 안내, 오른쪽=초기화까지 남은 시간. 기준선 안내가 비어도 남은 시간은 오른쪽에 고정된다. */
   .reset-info {
     margin-top: 4px;
     font-size: 10px;
     color: #9aa0a6;
-    text-align: right;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
   }
+  .pace-info { white-space: nowrap; }
   .track {
+    position: relative;
     width: 100%;
     height: 14px;
     background: #33363c;
     border-radius: 7px;
     overflow: hidden;
+  }
+  /* 남은 시간 대비 적정 사용률 위치. 채움(.fill)보다 뒤에 와서 그 위에 겹쳐 그려진다.
+     어두운 빈 트랙과 초록/노랑/빨강 채움 위 모두에서 보여야 해서 흰 선 + 어두운 테두리로 둔다. */
+  .pace-tick {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+    transition: left 0.4s ease;
   }
   .fill {
     height: 100%;
@@ -105,16 +123,28 @@
         <span class="row-label" id="fiveHourLabel">5시간</span>
         <span class="row-pct" id="fiveHourPct">0%</span>
       </div>
-      <div class="track"><div class="fill" id="fiveHourFill"></div></div>
-      <div class="reset-info" id="fiveHourResetInfo"></div>
+      <div class="track">
+        <div class="fill" id="fiveHourFill"></div>
+        <div class="pace-tick" id="fiveHourPaceTick" hidden></div>
+      </div>
+      <div class="reset-info">
+        <span class="pace-info" id="fiveHourPaceInfo"></span>
+        <span id="fiveHourResetInfo"></span>
+      </div>
     </div>
     <div class="row">
       <div class="row-top">
         <span class="row-label" id="thisWeekLabel">이번 주</span>
         <span class="row-pct" id="weeklyPct">0%</span>
       </div>
-      <div class="track"><div class="fill" id="weeklyFill"></div></div>
-      <div class="reset-info" id="weeklyResetInfo"></div>
+      <div class="track">
+        <div class="fill" id="weeklyFill"></div>
+        <div class="pace-tick" id="weeklyPaceTick" hidden></div>
+      </div>
+      <div class="reset-info">
+        <span class="pace-info" id="weeklyPaceInfo"></span>
+        <span id="weeklyResetInfo"></span>
+      </div>
     </div>
   </div>
   <script src="renderer.js"></script>
