@@ -320,73 +320,97 @@ function formatHM(ms) {
     : L('durationHM', { h: hours, m: minutes });
 }
 
-// 이번 구간 시작부터 지금까지의 페이스가 끝까지 이어진다고 가정했을 때 도달할 것으로 예상되는
-// 사용률(%)을 추정한다. 개인화 모델이 충분히 학습되어 있으면(과거 구간의 경과율별 누적비용 곡선)
-// 그 곡선 기반으로 예측하고, 아직 데이터가 부족하면 단순 선형 예측으로 대체(fallback)한다.
-function computeAdviceStats() {
-  const p = computePercents();
+// 한 한도의 예측을 계산한다. computePercents()가 이미 만든 값만 받아서 부수효과 없이 동작하므로,
+// 1초 폴링 루프(위젯 배지)와 상세창(조언 카드)이 computePercents()를 두 번 돌리지 않고 같이 쓴다.
+//
+// 이번 구간 시작부터 지금까지의 페이스가 끝까지 이어진다고 가정했을 때 도달할 사용률(%)을 추정한다.
+// 개인화 모델이 충분히 학습되어 있으면 그 곡선으로 예측하고, 데이터가 부족하면 단순 선형으로 대체한다.
+//
+// timeToLimitMs와 slowdownRatio는 같은 비율 r에서 나온다.
+//   r = (100 - 현재%) / (예상마감% - 현재%)   = 남은 구간에서 쓸 수 있는 몫이 예상 소비량 중 차지하는 비율
+//   - 한도 도달까지 남은 시간 = 남은 시간 x r   (남은 구간에 페이스가 고르게 이어진다고 볼 때)
+//   - 구간 끝까지 버티려면 줄여야 할 속도 = 지금 페이스의 r
+// 같은 r에서 나오므로 "2시간 뒤 도달"과 "속도를 60%로"가 서로 어긋날 수 없다.
+// 예상 마감이 100% 이하면 이 구간에서는 한도에 닿지 않으므로 둘 다 null이다.
+function projectLimit(kind, windowMs, pct, resetInMs, cost, idleSec) {
+  // 아직 시작하지 않은 5시간 구간은 resetInMs가 null이라 여기서 자연히 전부 null이 된다.
+  const elapsedMs = resetInMs != null ? Math.max(0, windowMs - resetInMs) : null;
+  const elapsedFrac = elapsedMs != null ? elapsedMs / windowMs : null;
 
-  const fiveHourElapsedMs =
-    p.fiveHourResetInMs != null ? Math.max(0, FIVE_HOUR_MS - p.fiveHourResetInMs) : null;
-  const weeklyElapsedMs = p.weeklyResetInMs != null ? Math.max(0, WEEK_MS - p.weeklyResetInMs) : null;
-
-  const fiveHourCost = p.fiveHourPending ? 0 : costStore.getCostSince(currentFiveHourStartMs() / 1000);
-  const weeklyCost = costStore.getCostSince(currentWeekStartMs() / 1000);
-
-  // 유휴시간이 길면 이 구간의 사용이 사실상 끝난 것으로 보고 예측을 현재값 쪽으로 당긴다.
-  // (곡선 모델만으로는 "이미 끝난 구간"을 표현할 수 없어 구조적으로 과대예측된다 - usageModel 참고.)
-  const idleSec = currentIdleSec();
-
-  const fiveHourModelPred =
-    !p.fiveHourPending && fiveHourElapsedMs != null
-      ? usageModel.predictFinalCost('fiveHour', fiveHourElapsedMs / FIVE_HOUR_MS, fiveHourCost, idleSec)
-      : null;
-  const weeklyModelPred =
-    weeklyElapsedMs != null
-      ? usageModel.predictFinalCost('weekly', weeklyElapsedMs / WEEK_MS, weeklyCost, idleSec)
-      : null;
+  const modelPred =
+    elapsedMs != null ? usageModel.predictFinalCost(kind, elapsedFrac, cost, idleSec) : null;
 
   // "페이스 배율" = 지금 페이스가 유지되면 최종적으로 지금의 몇 배가 될지. 비율이라 단위와 무관하므로
   // 실제 % (ground truth)에 그대로 곱해 "예상 마감 %"를 구한다. 현재 %가 실측값 없이 null이면
   // 곱할 기준값 자체가 없으므로 예측도 계산하지 않는다(추정치로 대체하지 않음).
-  const fiveHourPaceMultiplier =
-    fiveHourModelPred != null && fiveHourCost > 0 ? fiveHourModelPred / fiveHourCost : null;
-  const weeklyPaceMultiplier = weeklyModelPred != null && weeklyCost > 0 ? weeklyModelPred / weeklyCost : null;
+  const paceMultiplier = modelPred != null && cost > 0 ? modelPred / cost : null;
 
   // 구간 초반에는 모델이든 단순 폴백이든 예측이 의미 없는 수준이라 아예 내보내지 않는다
   // (usageModel.isProjectionReliable 참고). 주간 한도는 완료 구간이 하나뿐이라 같은 임계값을
   // 검증하지 못했지만, "구간의 1/4도 안 지난 시점의 외삽은 못 믿는다"는 근거는 구간 길이와 무관하다.
-  const fiveHourElapsedFrac = fiveHourElapsedMs != null ? fiveHourElapsedMs / FIVE_HOUR_MS : null;
-  const weeklyElapsedFrac = weeklyElapsedMs != null ? weeklyElapsedMs / WEEK_MS : null;
-
-  let fiveHourProjectedPct = null;
-  if (p.fiveHourPct != null && usageModel.isProjectionReliable(fiveHourElapsedFrac)) {
-    const multiplier =
-      fiveHourPaceMultiplier != null ? fiveHourPaceMultiplier : 1 / fiveHourElapsedFrac;
-    fiveHourProjectedPct = Math.round(p.fiveHourPct * multiplier * 10) / 10;
+  let projectedPct = null;
+  if (pct != null && usageModel.isProjectionReliable(elapsedFrac)) {
+    const multiplier = paceMultiplier != null ? paceMultiplier : 1 / elapsedFrac;
+    projectedPct = Math.round(pct * multiplier * 10) / 10;
   }
 
-  let weeklyProjectedPct = null;
-  if (p.weeklyPct != null && usageModel.isProjectionReliable(weeklyElapsedFrac)) {
-    const multiplier = weeklyPaceMultiplier != null ? weeklyPaceMultiplier : 1 / weeklyElapsedFrac;
-    weeklyProjectedPct = Math.round(p.weeklyPct * multiplier * 10) / 10;
+  let timeToLimitMs = null;
+  let slowdownRatio = null;
+  if (projectedPct != null && projectedPct > 100 && resetInMs != null) {
+    // projectedPct > 100 >= pct 이므로 분모는 항상 0보다 크다. 이미 한도에 닿았으면(pct >= 100) r = 0.
+    const r = pct >= 100 ? 0 : (100 - pct) / (projectedPct - pct);
+    timeToLimitMs = Math.round(resetInMs * r);
+    slowdownRatio = r;
   }
+
+  return { elapsedMs, projectedPct, modelBased: modelPred != null, timeToLimitMs, slowdownRatio };
+}
+
+function computeAdviceStats() {
+  const p = computePercents();
+
+  // 유휴시간이 길면 이 구간의 사용이 사실상 끝난 것으로 보고 예측을 현재값 쪽으로 당긴다.
+  // (곡선 모델만으로는 "이미 끝난 구간"을 표현할 수 없어 구조적으로 과대예측된다 - usageModel 참고.)
+  const idleSec = currentIdleSec();
+  const fiveHour = projectLimit(
+    'fiveHour',
+    FIVE_HOUR_MS,
+    p.fiveHourPct,
+    p.fiveHourResetInMs,
+    p.fiveHourPending ? 0 : costStore.getCostSince(currentFiveHourStartMs() / 1000),
+    idleSec
+  );
+  const weekly = projectLimit(
+    'weekly',
+    WEEK_MS,
+    p.weeklyPct,
+    p.weeklyResetInMs,
+    costStore.getCostSince(currentWeekStartMs() / 1000),
+    idleSec
+  );
+
+  // 속도 배율은 화면에 %로 보이므로 여기서 정수 %로 굳힌다. 0%는 "멈추라"는 뜻이 되어버려서 최소 1%.
+  const slowdownPct = (ratio) => (ratio == null ? null : Math.max(1, Math.round(ratio * 100)));
 
   return {
     fiveHourPct: p.fiveHourPct != null ? Math.round(p.fiveHourPct * 10) / 10 : null,
     fiveHourHasData: p.fiveHourHasData,
-    fiveHourElapsed: formatHM(fiveHourElapsedMs),
+    fiveHourElapsed: formatHM(fiveHour.elapsedMs),
     fiveHourRemaining: formatHM(p.fiveHourResetInMs),
-    fiveHourProjectedPct,
-    fiveHourSafePct: fiveHourProjectedPct != null ? Math.round((100 - fiveHourProjectedPct) * 10) / 10 : null,
-    fiveHourModelBased: fiveHourModelPred != null,
+    fiveHourProjectedPct: fiveHour.projectedPct,
+    fiveHourTimeToLimit: fiveHour.timeToLimitMs != null ? formatHM(fiveHour.timeToLimitMs) : null,
+    fiveHourAtLimitNow: fiveHour.timeToLimitMs === 0,
+    fiveHourSlowdownPct: slowdownPct(fiveHour.slowdownRatio),
+    fiveHourModelBased: fiveHour.modelBased,
     weeklyPct: p.weeklyPct != null ? Math.round(p.weeklyPct * 10) / 10 : null,
     weeklyHasData: p.weeklyHasData,
-    weeklyElapsed: formatHM(weeklyElapsedMs),
+    weeklyElapsed: formatHM(weekly.elapsedMs),
     weeklyRemaining: formatHM(p.weeklyResetInMs),
-    weeklyProjectedPct,
-    weeklySafePct: weeklyProjectedPct != null ? Math.round((100 - weeklyProjectedPct) * 10) / 10 : null,
-    weeklyModelBased: weeklyModelPred != null,
+    weeklyProjectedPct: weekly.projectedPct,
+    weeklyTimeToLimit: weekly.timeToLimitMs != null ? formatHM(weekly.timeToLimitMs) : null,
+    weeklyAtLimitNow: weekly.timeToLimitMs === 0,
+    weeklySlowdownPct: slowdownPct(weekly.slowdownRatio),
+    weeklyModelBased: weekly.modelBased,
     // 과거 구간들에서 모델 예측 vs 단순 선형 예측이 실제값 대비 평균적으로 얼마나 틀렸는지 (검증용, 없으면 null)
     fiveHourAccuracy: usageModel.getAccuracyStats('fiveHour'),
     weeklyAccuracy: usageModel.getAccuracyStats('weekly'),
@@ -399,26 +423,56 @@ function computeAdviceStats() {
 function buildAdvicePrompt(stats) {
   const languageName = LANGUAGE_NAME_EN[resolveLanguage()] || 'English';
 
-  const fiveHourLine = stats.fiveHourHasData
-    ? `[5-hour limit] current usage ${stats.fiveHourPct}%, projected end-of-window usage at this pace ` +
-      `${stats.fiveHourProjectedPct != null ? stats.fiveHourProjectedPct + '%' : 'not computable'}, ` +
-      `recommended remaining headroom ${stats.fiveHourSafePct != null ? stats.fiveHourSafePct + '%' : 'not computable'}`
-    : '[5-hour limit] no real-time data (requires a Claude Code terminal session)';
-  const weeklyLine = stats.weeklyHasData
-    ? `[Weekly limit] current usage ${stats.weeklyPct}%, projected end-of-window usage at this pace ` +
-      `${stats.weeklyProjectedPct != null ? stats.weeklyProjectedPct + '%' : 'not computable'}, ` +
-      `recommended remaining headroom ${stats.weeklySafePct != null ? stats.weeklySafePct + '%' : 'not computable'}`
-    : '[Weekly limit] no real-time data (requires a Claude Code terminal session)';
+  // 예전에는 "recommended remaining headroom" = 100 - 예상마감% 를 넘겼는데, 그건 "구간이 끝날 때
+  // 남아 있을 여유분"이지 "앞으로 더 써도 되는 양"이 아니라서 화면과 조언이 함께 틀렸다. 이제는
+  // 한도 도달까지 남은 시간과 줄여야 할 속도처럼 그대로 행동으로 옮길 수 있는 값만 넘긴다.
+  const limitLine = (tag, hasData, pct, projectedPct, remaining, timeToLimit, atLimitNow, slowdownPct) => {
+    if (!hasData) return `[${tag}] no real-time data (requires a Claude Code terminal session)`;
+    const parts = [`current usage ${pct}%`, `${remaining} until this window resets`];
+    if (projectedPct == null) {
+      parts.push('too early in the window to project the end-of-window usage');
+    } else if (atLimitNow) {
+      parts.push('the limit has already been reached');
+    } else if (timeToLimit != null) {
+      parts.push(`projected to reach 100% in ${timeToLimit} - BEFORE the window resets`);
+      parts.push(`slowing to ${slowdownPct}% of the current pace would make it last the whole window`);
+    } else {
+      parts.push(`projected to end the window at ${projectedPct}%, staying within the limit`);
+    }
+    return `[${tag}] ` + parts.join('; ');
+  };
+
+  const fiveHourLine = limitLine(
+    '5-hour limit',
+    stats.fiveHourHasData,
+    stats.fiveHourPct,
+    stats.fiveHourProjectedPct,
+    stats.fiveHourRemaining,
+    stats.fiveHourTimeToLimit,
+    stats.fiveHourAtLimitNow,
+    stats.fiveHourSlowdownPct
+  );
+  const weeklyLine = limitLine(
+    'Weekly limit',
+    stats.weeklyHasData,
+    stats.weeklyPct,
+    stats.weeklyProjectedPct,
+    stats.weeklyRemaining,
+    stats.weeklyTimeToLimit,
+    stats.weeklyAtLimitNow,
+    stats.weeklySlowdownPct
+  );
 
   return [
     'You are a Claude Code usage-pacing coach. The numbers below are already computed - do not recompute or change them.',
-    `Using these numbers, explain in ${languageName} how the user can use both the 5-hour and weekly limits effectively without exceeding them.`,
-    'Do not mention elapsed or remaining time. Just quote the given "recommended remaining headroom" figures as-is inside your explanation.',
+    `Write in ${languageName}.`,
+    'The app already shows the user every number above the text you write, so do NOT restate them. Write what to DO instead.',
+    'Each per-limit field must be exactly ONE short imperative sentence, at most 20 words, telling the user what to do right now (for example: keep going, wrap up the current task, switch to a lighter model, or save the heavy work for after the reset).',
     `For any limit marked as having no data, do not give advice for it - just briefly say (in ${languageName}) that there is no data.`,
     `Output ONLY one raw JSON object, no other text and no markdown code fences. Every text value (summary, fiveHour, weekly) must be written in ${languageName}. The "riskLevel" field is the only exception: it must be exactly one of these English codes, untranslated: "safe", "caution", or "danger".`,
-    '{"summary": "one-sentence overall summary", "riskLevel": "safe or caution or danger", ' +
-      '"fiveHour": "1-2 sentence advice for the 5-hour limit (quoting the given recommended headroom)", ' +
-      '"weekly": "1-2 sentence advice for the weekly limit (quoting the given recommended headroom)"}',
+    '{"summary": "one short sentence covering both limits", "riskLevel": "safe or caution or danger", ' +
+      '"fiveHour": "one short imperative sentence for the 5-hour limit", ' +
+      '"weekly": "one short imperative sentence for the weekly limit"}',
     '',
     fiveHourLine,
     weeklyLine,
@@ -500,9 +554,14 @@ function openDetailWindow() {
     return;
   }
 
+  // 조언 카드마다 헤드라인 아래 보조 한 줄(남은 시간/줄여야 할 속도)이 붙으면서 480으로는 주간 카드가
+  // 잘렸다. 내용이 가장 길 때(두 한도 모두 한도 도달 + 정확도 줄까지) 700이면 스크롤 없이 들어간다.
+  // 다만 세로 768 같은 화면에서는 700이 작업 영역을 넘으므로, 넘칠 때만 작업 영역에 맞춘다
+  // (resizable:false라 사용자가 직접 줄일 수 없어서 창이 화면 밖으로 나가면 손쓸 방법이 없다).
+  const { workArea } = screen.getPrimaryDisplay();
   detailWindow = new BrowserWindow({
     width: 420,
-    height: 480,
+    height: Math.min(700, Math.max(420, workArea.height - 80)),
     useContentSize: true,
     resizable: false,
     minimizable: true,
@@ -529,11 +588,64 @@ function openDetailWindow() {
   });
 }
 
+// 위젯 헤더 배지에 쓸 한 글자짜리 요약. 두 한도 중 더 나쁜 쪽을 대표로 보여준다.
+//   danger  = 이 속도면 초기화 전에 한도에 도달한다 (예상 마감 > 100%)
+//   caution = 기준선을 넘어섰다 (남은 시간 대비 과소비 중)
+//   safe    = 기준선 아래
+// danger는 예측이 필요해서 구간 초반(데드존)에는 나오지 않지만 caution은 기준선만 있으면 되므로,
+// 구간 초반에도 "빠르다"는 신호는 계속 나온다.
+function paceRiskOf(pct, pacePct, projectedPct) {
+  if (pct == null) return null;
+  if (projectedPct != null && projectedPct > 100) return 'danger';
+  if (pacePct != null && pct > pacePct) return 'caution';
+  return 'safe';
+}
+
+const RISK_RANK = { safe: 0, caution: 1, danger: 2 };
+
+function worstRisk(a, b) {
+  if (a == null) return b;
+  if (b == null) return a;
+  return RISK_RANK[a] >= RISK_RANK[b] ? a : b;
+}
+
 function pushUsageUpdate() {
   const percents = computePercents();
   checkUsageThresholds(percents);
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.webContents.send('usage-update', percents);
+
+  // 배지는 예상 마감까지 봐야 하므로 예측을 같이 구한다. computeAdviceStats()를 쓰면 computePercents()가
+  // 한 번 더 돌면서 학습 샘플이 중복 기록되므로, 부수효과 없는 projectLimit()만 직접 쓴다.
+  const idleSec = currentIdleSec();
+  const fiveHour = projectLimit(
+    'fiveHour',
+    FIVE_HOUR_MS,
+    percents.fiveHourPct,
+    percents.fiveHourResetInMs,
+    percents.fiveHourPending ? 0 : costStore.getCostSince(currentFiveHourStartMs() / 1000),
+    idleSec
+  );
+  const weekly = projectLimit(
+    'weekly',
+    WEEK_MS,
+    percents.weeklyPct,
+    percents.weeklyResetInMs,
+    costStore.getCostSince(currentWeekStartMs() / 1000),
+    idleSec
+  );
+
+  mainWindow.webContents.send('usage-update', {
+    ...percents,
+    paceRisk: worstRisk(
+      // 아직 시작하지 않은 5시간 구간은 pct가 0으로 채워져 있을 뿐 실제 신호가 아니라서 제외한다.
+      paceRiskOf(
+        percents.fiveHourPending ? null : percents.fiveHourPct,
+        percents.fiveHourPacePct,
+        fiveHour.projectedPct
+      ),
+      paceRiskOf(percents.weeklyPct, percents.weeklyPacePct, weekly.projectedPct)
+    ),
+  });
 }
 
 function startPolling() {

@@ -14,8 +14,10 @@ const riskBadge = document.getElementById('riskBadge');
 const summaryText = document.getElementById('summaryText');
 const fiveHourAdvice = document.getElementById('fiveHourAdvice');
 const weeklyAdvice = document.getElementById('weeklyAdvice');
-const fiveHourSafePct = document.getElementById('fiveHourSafePct');
-const weeklySafePct = document.getElementById('weeklySafePct');
+const fiveHourHeadline = document.getElementById('fiveHourHeadline');
+const weeklyHeadline = document.getElementById('weeklyHeadline');
+const fiveHourSub = document.getElementById('fiveHourSub');
+const weeklySub = document.getElementById('weeklySub');
 const refreshBtn = document.getElementById('refreshBtn');
 const detailHeadingEl = document.getElementById('detailHeading');
 const fiveHourCardTitleEl = document.getElementById('fiveHourCardTitle');
@@ -44,6 +46,52 @@ function showAdviceBox(text, isError) {
   adviceBox.textContent = text;
 }
 
+// 조언 카드의 헤드라인 한 줄과 그 아래 보조 한 줄. 숫자는 전부 main.js가 계산한 값을 그대로 쓰고,
+// Groq은 "그래서 뭘 하라"는 문장만 담당한다.
+//
+// 세 가지 경우뿐이다.
+//   1. 예상 마감이 100% 초과  -> "이 속도면 {t} 뒤 한도 도달" + 초기화까지 남은 시간 + 줄여야 할 속도
+//   2. 예상 마감이 100% 이하  -> "이 속도면 구간 끝까지 여유 있습니다" + 예상 마감 사용률
+//   3. 구간 초반(데드존)이라 예측 자체가 없음 -> "아직 판단할 수 없습니다"
+// 실측값 자체가 없으면(터미널 세션 없음) 예측이 없는 이유가 데드존이 아니므로 따로 구분한다.
+function renderAdviceHeadline(headlineEl, subEl, hasData, projectedPct, timeToLimit, atLimitNow, slowdownPct, remaining) {
+  headlineEl.classList.remove('hits-limit', 'unknown');
+
+  if (!hasData) {
+    headlineEl.classList.add('unknown');
+    headlineEl.textContent = STR.noData;
+    subEl.textContent = '';
+    return;
+  }
+
+  if (projectedPct == null) {
+    headlineEl.classList.add('unknown');
+    headlineEl.textContent = STR.paceTooEarly;
+    subEl.textContent = `${STR.remainingLabel}${remaining}`;
+    return;
+  }
+
+  if (atLimitNow) {
+    headlineEl.classList.add('hits-limit');
+    headlineEl.textContent = STR.paceAtLimitNow;
+    subEl.textContent = `${STR.remainingLabel}${remaining}`;
+    return;
+  }
+
+  if (timeToLimit != null) {
+    headlineEl.classList.add('hits-limit');
+    headlineEl.textContent = fmt(STR.paceHitsLimitIn, { t: timeToLimit });
+    // 한도 도달 시각과 초기화 시각을 나란히 둬야 "초기화 전에 막힌다"가 뺄셈 없이 보인다.
+    subEl.textContent =
+      `${STR.remainingLabel}${remaining}` +
+      (slowdownPct != null ? ` · ${fmt(STR.paceSlowdown, { n: slowdownPct })}` : '');
+    return;
+  }
+
+  headlineEl.textContent = STR.paceFitsInWindow;
+  subEl.textContent = `${STR.projectedLabel}${projectedPct}% · ${STR.remainingLabel}${remaining}`;
+}
+
 function showAdviceCards(advice, stats) {
   adviceBox.style.display = 'none';
   adviceBox.classList.remove('error');
@@ -54,11 +102,17 @@ function showAdviceCards(advice, stats) {
   summaryText.textContent = advice.summary || '';
   fiveHourAdvice.textContent = advice.fiveHour || '';
   weeklyAdvice.textContent = advice.weekly || '';
-  // 숫자는 개인화 모델(main.js)이 계산한 값을 그대로 쓰고, Groq은 설명만 담당한다.
-  fiveHourSafePct.textContent =
-    stats && stats.fiveHourSafePct != null ? fmt(STR.recommendedUpTo, { x: stats.fiveHourSafePct }) : '';
-  weeklySafePct.textContent =
-    stats && stats.weeklySafePct != null ? fmt(STR.recommendedUpTo, { x: stats.weeklySafePct }) : '';
+  if (!stats) return;
+  renderAdviceHeadline(
+    fiveHourHeadline, fiveHourSub,
+    stats.fiveHourHasData, stats.fiveHourProjectedPct, stats.fiveHourTimeToLimit,
+    stats.fiveHourAtLimitNow, stats.fiveHourSlowdownPct, stats.fiveHourRemaining
+  );
+  renderAdviceHeadline(
+    weeklyHeadline, weeklySub,
+    stats.weeklyHasData, stats.weeklyProjectedPct, stats.weeklyTimeToLimit,
+    stats.weeklyAtLimitNow, stats.weeklySlowdownPct, stats.weeklyRemaining
+  );
 }
 
 function renderStats(stats) {

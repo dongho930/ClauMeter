@@ -31,6 +31,23 @@
   .title { font-size: 12px; font-weight: 600; }
   .header-right { display: flex; align-items: center; gap: 6px; -webkit-app-region: no-drag; }
   .safe-controls { display: flex; align-items: center; gap: 6px; }
+  /* 페이스 상태 배지. safe-controls 밖에 둬야 한다 - 안에 넣으면 고정(클릭스루) 모드에서
+     마우스를 통과시키는 영역이 이 배지만큼 넓어져서, 의도치 않은 곳에서 클릭이 위젯에 닿는다. */
+  .pace-badge {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: #9aa0a6;
+    white-space: nowrap;
+  }
+  .pace-badge-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #43a047;
+    transition: background-color 0.4s ease;
+  }
   .updated { font-size: 10px; color: #9aa0a6; }
   .info-btn {
     background: transparent;
@@ -109,6 +126,10 @@
     <div class="header">
       <span class="title" id="titleText">Claude 사용량</span>
       <div class="header-right" id="headerRight">
+        <span class="pace-badge" id="paceBadge" hidden>
+          <span class="pace-badge-dot" id="paceBadgeDot"></span>
+          <span id="paceBadgeLabel"></span>
+        </span>
         <div class="safe-controls" id="safeControls">
           <button class="info-btn" id="clickThroughBtn"><svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8-2"/></svg></button>
         </div>

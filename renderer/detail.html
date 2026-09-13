@@ -64,8 +64,12 @@
     padding: 10px 12px;
   }
   .advice-card-title { font-size: 11px; color: #9aa0a6; margin-bottom: 4px; }
-  .advice-card-pct { font-size: 17px; font-weight: 700; color: #7cc4ff; margin-bottom: 4px; }
-  .advice-card-body { font-size: 13px; line-height: 1.5; }
+  /* 헤드라인은 "이 속도면 ○○ 뒤 한도 도달" - 한도에 닿는 경우에만 경고색이 된다. */
+  .advice-card-headline { font-size: 17px; font-weight: 700; color: #7cc4ff; }
+  .advice-card-headline.hits-limit { color: #ff8a65; }
+  .advice-card-headline.unknown { font-size: 13px; font-weight: 400; color: #7a828a; }
+  .advice-card-sub { font-size: 11px; color: #9aa0a6; margin-top: 2px; }
+  .advice-card-body { font-size: 13px; line-height: 1.5; margin-top: 6px; }
   .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
   button {
     padding: 7px 16px;
@@ -90,12 +94,14 @@
   <div class="advice-cards" id="adviceCards" style="display:none;">
     <div class="advice-card">
       <div class="advice-card-title" id="fiveHourCardTitle">5시간 한도</div>
-      <div class="advice-card-pct" id="fiveHourSafePct"></div>
+      <div class="advice-card-headline" id="fiveHourHeadline"></div>
+      <div class="advice-card-sub" id="fiveHourSub"></div>
       <div class="advice-card-body" id="fiveHourAdvice"></div>
     </div>
     <div class="advice-card">
       <div class="advice-card-title" id="weeklyCardTitle">주간 한도</div>
-      <div class="advice-card-pct" id="weeklySafePct"></div>
+      <div class="advice-card-headline" id="weeklyHeadline"></div>
+      <div class="advice-card-sub" id="weeklySub"></div>
       <div class="advice-card-body" id="weeklyAdvice"></div>
     </div>
   </div>

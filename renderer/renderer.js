@@ -54,6 +54,22 @@ function setPace(tickEl, infoEl, pct, pacePct) {
   infoEl.style.color = delta > 0 ? '#ffb300' : '#9aa0a6';
 }
 
+// 헤더의 페이스 상태 배지. 두 한도 중 더 나쁜 쪽을 main 프로세스가 골라서 보내준다.
+// 색상 판정은 언어와 무관한 영어 코드로만 하고(상세창의 riskBadge와 같은 규칙), 문구만 번역한다.
+const PACE_RISK_COLOR = { safe: '#43a047', caution: '#ffb300', danger: '#e53935' };
+
+function setPaceBadge(risk) {
+  if (!risk || !STR || !PACE_RISK_COLOR[risk]) {
+    paceBadge.hidden = true;
+    return;
+  }
+  paceBadge.hidden = false;
+  paceBadgeDot.style.backgroundColor = PACE_RISK_COLOR[risk];
+  paceBadgeLabel.textContent =
+    risk === 'danger' ? STR.riskDanger : risk === 'caution' ? STR.riskCaution : STR.riskSafe;
+  paceBadgeLabel.style.color = risk === 'safe' ? '#9aa0a6' : PACE_RISK_COLOR[risk];
+}
+
 function formatRemaining(ms) {
   if (ms == null || !STR) return '';
   const totalMinutes = Math.max(0, Math.round(ms / 60000));
@@ -83,6 +99,9 @@ const weeklyPct = document.getElementById('weeklyPct');
 const weeklyResetInfo = document.getElementById('weeklyResetInfo');
 const weeklyPaceTick = document.getElementById('weeklyPaceTick');
 const weeklyPaceInfo = document.getElementById('weeklyPaceInfo');
+const paceBadge = document.getElementById('paceBadge');
+const paceBadgeDot = document.getElementById('paceBadgeDot');
+const paceBadgeLabel = document.getElementById('paceBadgeLabel');
 const updatedEl = document.getElementById('updated');
 const infoBtn = document.getElementById('infoBtn');
 const settingsBtn = document.getElementById('settingsBtn');
@@ -145,6 +164,7 @@ window.api.onUsageUpdate((data) => {
   setRow(weeklyFill, weeklyPct, data.weeklyPct);
   setPace(fiveHourPaceTick, fiveHourPaceInfo, data.fiveHourPct, data.fiveHourPacePct);
   setPace(weeklyPaceTick, weeklyPaceInfo, data.weeklyPct, data.weeklyPacePct);
+  setPaceBadge(data.paceRisk);
   fiveHourResetInfo.textContent = data.fiveHourPending
     ? (STR ? STR.resetPending : '')
     : formatRemaining(data.fiveHourResetInMs);
