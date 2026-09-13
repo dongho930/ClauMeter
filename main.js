@@ -662,22 +662,9 @@ function paceRiskOf(pct, pacePct, projectedPct) {
   return 'safe';
 }
 
-const RISK_RANK = { safe: 0, caution: 1, danger: 2 };
-
-// 두 한도 중 "먼저 막는 쪽"을 고르고 어느 쪽인지도 같이 돌려준다. 단순히 더 나쁜 코드만 고르면
-// 두 방향이 대칭으로 보이는데, 실제 결과는 전혀 다르다.
-//   - 5시간 초과 + 주간 여유 -> 최대 5시간 막혔다가 새 구간이 통째로 열린다. 게다가 5시간 여유분은
-//     안 쓰면 소멸이라 다 쓰는 게 오히려 정상이다.
-//   - 주간 초과 + 5시간 여유 -> 지금 속도를 줄여도 이번 구간 안에서는 해결되지 않는다. 며칠에 걸쳐
-//     줄여야 한다.
-// 그래서 심각도가 같으면 주간이 이긴다 - 결과가 길고 이번 세션 안에서 되돌릴 수 없기 때문이다.
-function bindingRisk(fiveHourRisk, weeklyRisk) {
-  const rank = (r) => (r == null ? -1 : RISK_RANK[r]);
-  if (rank(weeklyRisk) >= rank(fiveHourRisk)) {
-    return weeklyRisk == null ? null : { risk: weeklyRisk, limit: weeklyRisk === 'safe' ? null : 'weekly' };
-  }
-  return { risk: fiveHourRisk, limit: fiveHourRisk === 'safe' ? null : 'fiveHour' };
-}
+// "먼저 막는 쪽"(bindingRisk)은 제목 줄에서 그 한도 이름을 밝게 하는 데만 쓰였는데, 상태에 따라
+// 글자까지 변하면 무엇이 달라졌는지 읽기 어려워서 없앴다. 두 한도의 점이 다 보이므로 나쁜 쪽이
+// 먼저 막는다는 건 대개 자명하다. (판정 근거는 git 이력 참고 - 심각도가 같으면 주간이 이겼다.)
 
 function pushUsageUpdate() {
   const percents = computePercents();
@@ -711,17 +698,8 @@ function pushUsageUpdate() {
     fiveHour.projectedPct
   );
   const weeklyRisk = paceRiskOf(percents.weeklyPct, percents.weeklyPacePct, weekly.projectedPct);
-  // 두 한도의 상태를 각 게이지 옆에 따로 보여주므로 "먼저 막는 쪽"은 더 이상 표시를 독점하지 않는다.
-  // 다만 동률일 때(둘 다 주의/둘 다 위험) 어느 쪽을 먼저 봐야 하는지는 여전히 정보라서, 그 행의
-  // 라벨만 밝게 하는 데 쓴다.
-  const binding = bindingRisk(fiveHourRisk, weeklyRisk);
 
-  mainWindow.webContents.send('usage-update', {
-    ...percents,
-    fiveHourRisk,
-    weeklyRisk,
-    bindingLimit: binding ? binding.limit : null,
-  });
+  mainWindow.webContents.send('usage-update', { ...percents, fiveHourRisk, weeklyRisk });
 }
 
 function startPolling() {

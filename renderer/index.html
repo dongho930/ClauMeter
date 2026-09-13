@@ -45,8 +45,8 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* 두 한도가 같은 상태일 때 어느 쪽을 먼저 봐야 하는지(먼저 막는 쪽)를 라벨 밝기로만 구분한다. */
-  .pace-state.binding .pace-state-label { color: #e6e6e6; font-weight: 600; }
+  /* 라벨은 상태와 무관하게 항상 같은 모양이다. 상태에 따라 변하는 건 점 색깔 하나뿐 - 글자까지
+     같이 변하면 제목 줄에서 무엇이 달라졌는지 읽어내는 데 오히려 방해가 된다. */
   .pace-state-dot {
     flex-shrink: 0;
     width: 7px;

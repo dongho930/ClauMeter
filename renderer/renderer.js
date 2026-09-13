@@ -62,10 +62,8 @@ function setPace(tickEl, infoEl, pct, pacePct) {
 // 표시가 있어서, 기준이 다른 색이 서로 붙어 있으면 같은 행이 두 가지로 말하는 것처럼 보인다.
 const PACE_RISK_COLOR = { safe: '#43a047', caution: '#ffb300', danger: '#e53935' };
 
-// binding=true면 이 한도가 "먼저 막는 쪽"이다. 둘 다 보이므로 대개 자명하지만, 두 상태가 같을 때는
-// 어느 쪽을 먼저 봐야 하는지가 여전히 정보라서 라벨 밝기로만 구분한다.
-function setPaceState(stateEl, labelEl, dotEl, label, risk, binding) {
-  stateEl.classList.toggle('binding', !!binding);
+// 상태에 따라 변하는 건 점 색깔 하나뿐이다. 한도 이름은 언제나 같은 회색 보통 글씨로 둔다.
+function setPaceState(stateEl, labelEl, dotEl, label, risk) {
   if (!risk || !PACE_RISK_COLOR[risk]) {
     stateEl.hidden = true;
     return;
@@ -77,14 +75,8 @@ function setPaceState(stateEl, labelEl, dotEl, label, risk, binding) {
 
 function setPaceStates(data) {
   if (!STR) return;
-  setPaceState(
-    fiveHourState, fiveHourStateLabel, fiveHourStateDot,
-    STR.fiveHourLabel, data.fiveHourRisk, data.bindingLimit === 'fiveHour'
-  );
-  setPaceState(
-    weeklyState, weeklyStateLabel, weeklyStateDot,
-    STR.thisWeekLabel, data.weeklyRisk, data.bindingLimit === 'weekly'
-  );
+  setPaceState(fiveHourState, fiveHourStateLabel, fiveHourStateDot, STR.fiveHourLabel, data.fiveHourRisk);
+  setPaceState(weeklyState, weeklyStateLabel, weeklyStateDot, STR.thisWeekLabel, data.weeklyRisk);
   // 양쪽 다 보여줄 게 없으면 묶음째 숨겨서 헤더에 빈 자리가 남지 않게 한다.
   paceStates.hidden = fiveHourState.hidden && weeklyState.hidden;
 }
