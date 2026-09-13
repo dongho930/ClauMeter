@@ -20,6 +20,10 @@ const fiveHourSub = document.getElementById('fiveHourSub');
 const weeklySub = document.getElementById('weeklySub');
 const fiveHourLink = document.getElementById('fiveHourLink');
 const weeklyLink = document.getElementById('weeklyLink');
+const fiveHourAdviceCard = document.getElementById('fiveHourAdviceCard');
+const weeklyAdviceCard = document.getElementById('weeklyAdviceCard');
+const fiveHourAdviceDot = document.getElementById('fiveHourAdviceDot');
+const weeklyAdviceDot = document.getElementById('weeklyAdviceDot');
 const refreshBtn = document.getElementById('refreshBtn');
 const detailHeadingEl = document.getElementById('detailHeading');
 const fiveHourCardTitleEl = document.getElementById('fiveHourCardTitle');
@@ -31,6 +35,12 @@ function riskColor(code) {
   if (code === 'danger') return '#e53935';
   if (code === 'caution') return '#ffb300';
   return '#43a047';
+}
+
+// 한도 카드의 상태색(점 + 왼쪽 바). 실측값이 없어 상태를 모를 때는 중립 회색으로 둔다 -
+// 초록(안전)으로 칠하면 "확인해보니 괜찮다"는 잘못된 신호가 된다.
+function riskAccent(code) {
+  return code ? riskColor(code) : '#4a4e55';
 }
 
 function riskLabel(code) {
@@ -98,6 +108,12 @@ function renderAdviceHeadline(headlineEl, subEl, hasData, projectedPct, timeToLi
 //   5시간 카드: 이 구간을 끝까지 쓰면 주간이 어디까지 가는지 (게이지가 여유로워 보여도 다 쓰면 안 되는 경우)
 //   주간 카드: 남은 주간 여유가 5시간 구간 몇 번분인지 (%p보다 훨씬 직관적인 단위)
 // 환산 비율은 실측 이력에서 학습하므로 표본이 부족하면 값이 null이고, 그때는 줄을 비워서 숨긴다.
+function applyLimitAccent(cardEl, dotEl, risk) {
+  const color = riskAccent(risk);
+  cardEl.style.borderLeftColor = color;
+  dotEl.style.background = color;
+}
+
 function renderLinkLines(stats) {
   fiveHourLink.textContent =
     stats.weeklyIfFiveHourFull != null ? fmt(STR.ifFiveHourFull, { x: stats.weeklyIfFiveHourFull }) : '';
@@ -124,6 +140,9 @@ function showAdviceCards(advice, stats) {
   fiveHourAdvice.textContent = advice.fiveHour || '';
   weeklyAdvice.textContent = advice.weekly || '';
   if (!stats) return;
+  // 같은 한도의 통계 카드와 조언 카드가 같은 상태색을 갖도록 맞춘다.
+  applyLimitAccent(fiveHourAdviceCard, fiveHourAdviceDot, stats.fiveHourRisk);
+  applyLimitAccent(weeklyAdviceCard, weeklyAdviceDot, stats.weeklyRisk);
   renderLinkLines(stats);
   renderAdviceHeadline(
     fiveHourHeadline, fiveHourSub,
@@ -156,16 +175,22 @@ function renderStats(stats) {
     ? `${STR.usageRateLabel}<b>${stats.weeklyPct}%</b> <span class="model-tag">${STR.realValueTag}</span>`
     : `${STR.usageRateLabel}<b>${STR.noData}</b> <span class="model-tag">${STR.needsTerminalTag}</span>`;
   statsEl.innerHTML = `
-    <div class="stat-card">
-      <div class="stat-title">${STR.fiveHourLimit}</div>
+    <div class="stat-card limit-card" style="border-left-color:${riskAccent(stats.fiveHourRisk)}">
+      <div class="limit-title">
+        <span class="limit-dot" style="background:${riskAccent(stats.fiveHourRisk)}"></span>
+        <span>${STR.fiveHourLimit}</span>
+      </div>
       <div class="stat-row">${fiveHourUsageRow}</div>
       <div class="stat-row">${STR.elapsedLabel}${stats.fiveHourElapsed}</div>
       <div class="stat-row">${STR.remainingLabel}${stats.fiveHourRemaining}</div>
       <div class="stat-row">${STR.projectedLabel}<b>${stats.fiveHourProjectedPct != null ? stats.fiveHourProjectedPct + '%' : '-'}</b> ${fiveHourTag}</div>
       ${fiveHourAccLine}
     </div>
-    <div class="stat-card">
-      <div class="stat-title">${STR.weeklyLimit}</div>
+    <div class="stat-card limit-card" style="border-left-color:${riskAccent(stats.weeklyRisk)}">
+      <div class="limit-title">
+        <span class="limit-dot" style="background:${riskAccent(stats.weeklyRisk)}"></span>
+        <span>${STR.weeklyLimit}</span>
+      </div>
       <div class="stat-row">${weeklyUsageRow}</div>
       <div class="stat-row">${STR.elapsedLabel}${stats.weeklyElapsed}</div>
       <div class="stat-row">${STR.remainingLabel}${stats.weeklyRemaining}</div>

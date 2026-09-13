@@ -20,7 +20,26 @@
     border-radius: 6px;
     padding: 10px;
   }
-  .stat-title { font-size: 11px; color: #9aa0a6; margin-bottom: 6px; }
+  /* 한도 이름은 이 창의 뼈대다. 11px 흐린 회색이면 본문에 묻혀서 어느 카드가 어느 한도인지
+     매번 다시 읽어야 했다. 크기·굵기·명도를 같이 올리고, 앞에 상태 점을 둔다. */
+  .limit-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #e6e6e6;
+    margin-bottom: 6px;
+  }
+  .limit-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4a4e55;
+  }
+  /* 같은 한도의 통계 카드와 조언 카드를 왼쪽 상태색 바로 묶는다. 없으면 카드 네 개가 따로 논다. */
+  .limit-card { border-left: 3px solid #4a4e55; }
   .stat-row { font-size: 12px; margin-bottom: 3px; }
   .stat-row b { color: #e6e6e6; }
   .model-tag { font-size: 10px; color: #7a828a; }
@@ -63,7 +82,6 @@
     border-radius: 6px;
     padding: 10px 12px;
   }
-  .advice-card-title { font-size: 11px; color: #9aa0a6; margin-bottom: 4px; }
   /* 헤드라인은 "이 속도면 ○○ 뒤 한도 도달" - 한도에 닿는 경우에만 경고색이 된다. */
   .advice-card-headline { font-size: 17px; font-weight: 700; color: #7cc4ff; }
   .advice-card-headline.hits-limit { color: #ff8a65; }
@@ -95,15 +113,21 @@
     <span id="summaryText"></span>
   </div>
   <div class="advice-cards" id="adviceCards" style="display:none;">
-    <div class="advice-card">
-      <div class="advice-card-title" id="fiveHourCardTitle">5시간 한도</div>
+    <div class="advice-card limit-card" id="fiveHourAdviceCard">
+      <div class="limit-title">
+        <span class="limit-dot" id="fiveHourAdviceDot"></span>
+        <span id="fiveHourCardTitle">5시간 한도</span>
+      </div>
       <div class="advice-card-headline" id="fiveHourHeadline"></div>
       <div class="advice-card-sub" id="fiveHourSub"></div>
       <div class="advice-card-link" id="fiveHourLink"></div>
       <div class="advice-card-body" id="fiveHourAdvice"></div>
     </div>
-    <div class="advice-card">
-      <div class="advice-card-title" id="weeklyCardTitle">주간 한도</div>
+    <div class="advice-card limit-card" id="weeklyAdviceCard">
+      <div class="limit-title">
+        <span class="limit-dot" id="weeklyAdviceDot"></span>
+        <span id="weeklyCardTitle">주간 한도</span>
+      </div>
       <div class="advice-card-headline" id="weeklyHeadline"></div>
       <div class="advice-card-sub" id="weeklySub"></div>
       <div class="advice-card-link" id="weeklyLink"></div>

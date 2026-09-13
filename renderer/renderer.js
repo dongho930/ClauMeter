@@ -54,24 +54,25 @@ function setPace(tickEl, infoEl, pct, pacePct) {
   infoEl.style.color = delta > 0 ? '#ffb300' : '#9aa0a6';
 }
 
-// 헤더의 페이스 상태 배지. 두 한도 중 더 나쁜 쪽을 main 프로세스가 골라서 보내준다.
-// 색상 판정은 언어와 무관한 영어 코드로만 하고(상세창의 riskBadge와 같은 규칙), 문구만 번역한다.
+// 각 게이지 옆의 페이스 상태(안전/주의/위험). 상태를 한 곳에만 두면 두 한도 중 하나밖에 못
+// 보여주므로 행마다 따로 그린다. 색상 판정은 언어와 무관한 영어 코드로만 하고(상세창과 같은 규칙),
+// 문구는 상세창 위험도 배지와 같은 문자열을 재사용한다.
 const PACE_RISK_COLOR = { safe: '#43a047', caution: '#ffb300', danger: '#e53935' };
 
-// limit은 그 판정을 부른 한도('fiveHour' | 'weekly'). 어느 쪽이 먼저 막는지가 대응 방법을 가른다 -
-// 5시간이면 잠깐 쉬면 새 구간이 열리고, 주간이면 며칠에 걸쳐 줄여야 한다. 한도 이름은 게이지에
-// 이미 쓰는 문자열을 그대로 재사용한다.
-function setPaceBadge(risk, limit) {
+// binding=true면 이 한도가 "먼저 막는 쪽"이다. 두 한도가 같은 상태일 때 어느 쪽을 먼저 봐야 하는지를
+// 라벨 밝기로만 구분한다 - 상태 자체는 두 행에 이미 다 나와 있으므로 그 이상은 필요 없다.
+function setRowState(headEl, dotEl, stateEl, risk, binding) {
+  headEl.classList.toggle('binding', !!binding);
   if (!risk || !STR || !PACE_RISK_COLOR[risk]) {
-    paceBadge.hidden = true;
+    dotEl.hidden = true;
+    stateEl.textContent = '';
     return;
   }
-  paceBadge.hidden = false;
-  paceBadgeDot.style.backgroundColor = PACE_RISK_COLOR[risk];
-  const label = risk === 'danger' ? STR.riskDanger : risk === 'caution' ? STR.riskCaution : STR.riskSafe;
-  const limitName = limit === 'weekly' ? STR.thisWeekLabel : limit === 'fiveHour' ? STR.fiveHourLabel : null;
-  paceBadgeLabel.textContent = limitName ? `${label} · ${limitName}` : label;
-  paceBadgeLabel.style.color = risk === 'safe' ? '#9aa0a6' : PACE_RISK_COLOR[risk];
+  dotEl.hidden = false;
+  dotEl.style.backgroundColor = PACE_RISK_COLOR[risk];
+  stateEl.textContent =
+    risk === 'danger' ? STR.riskDanger : risk === 'caution' ? STR.riskCaution : STR.riskSafe;
+  stateEl.style.color = risk === 'safe' ? '#9aa0a6' : PACE_RISK_COLOR[risk];
 }
 
 function formatRemaining(ms) {
@@ -103,9 +104,12 @@ const weeklyPct = document.getElementById('weeklyPct');
 const weeklyResetInfo = document.getElementById('weeklyResetInfo');
 const weeklyPaceTick = document.getElementById('weeklyPaceTick');
 const weeklyPaceInfo = document.getElementById('weeklyPaceInfo');
-const paceBadge = document.getElementById('paceBadge');
-const paceBadgeDot = document.getElementById('paceBadgeDot');
-const paceBadgeLabel = document.getElementById('paceBadgeLabel');
+const fiveHourHead = document.getElementById('fiveHourHead');
+const fiveHourStateDot = document.getElementById('fiveHourStateDot');
+const fiveHourState = document.getElementById('fiveHourState');
+const weeklyHead = document.getElementById('weeklyHead');
+const weeklyStateDot = document.getElementById('weeklyStateDot');
+const weeklyState = document.getElementById('weeklyState');
 const updatedEl = document.getElementById('updated');
 const infoBtn = document.getElementById('infoBtn');
 const settingsBtn = document.getElementById('settingsBtn');
@@ -168,7 +172,8 @@ window.api.onUsageUpdate((data) => {
   setRow(weeklyFill, weeklyPct, data.weeklyPct);
   setPace(fiveHourPaceTick, fiveHourPaceInfo, data.fiveHourPct, data.fiveHourPacePct);
   setPace(weeklyPaceTick, weeklyPaceInfo, data.weeklyPct, data.weeklyPacePct);
-  setPaceBadge(data.paceRisk, data.paceRiskLimit);
+  setRowState(fiveHourHead, fiveHourStateDot, fiveHourState, data.fiveHourRisk, data.bindingLimit === 'fiveHour');
+  setRowState(weeklyHead, weeklyStateDot, weeklyState, data.weeklyRisk, data.bindingLimit === 'weekly');
   fiveHourResetInfo.textContent = data.fiveHourPending
     ? (STR ? STR.resetPending : '')
     : formatRemaining(data.fiveHourResetInMs);

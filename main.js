@@ -416,7 +416,18 @@ function computeAdviceStats() {
       ? Math.round((p.weeklyPct + perFiveHour * (100 - p.fiveHourPct)) * 10) / 10
       : null;
 
+  // 상세창도 위젯과 똑같은 상태(안전/주의/위험)를 쓴다. 판정 규칙을 렌더러에 다시 구현하지 않고
+  // 같은 paceRiskOf 하나가 두 창을 먹이도록 여기서 계산해 내보낸다.
+  const fiveHourRisk = paceRiskOf(
+    p.fiveHourPending ? null : p.fiveHourPct,
+    p.fiveHourPacePct,
+    fiveHour.projectedPct
+  );
+  const weeklyRisk = paceRiskOf(p.weeklyPct, p.weeklyPacePct, weekly.projectedPct);
+
   return {
+    fiveHourRisk,
+    weeklyRisk,
     fiveHourPct: p.fiveHourPct != null ? Math.round(p.fiveHourPct * 10) / 10 : null,
     fiveHourHasData: p.fiveHourHasData,
     fiveHourElapsed: formatHM(fiveHour.elapsedMs),
@@ -673,8 +684,8 @@ function pushUsageUpdate() {
   checkUsageThresholds(percents);
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
-  // 배지는 예상 마감까지 봐야 하므로 예측을 같이 구한다. computeAdviceStats()를 쓰면 computePercents()가
-  // 한 번 더 돌면서 학습 샘플이 중복 기록되므로, 부수효과 없는 projectLimit()만 직접 쓴다.
+  // 상태 표시는 예상 마감까지 봐야 하므로 예측을 같이 구한다. computeAdviceStats()를 쓰면
+  // computePercents()가 한 번 더 돌면서 학습 샘플이 중복 기록되므로, 부수효과 없는 projectLimit()만 쓴다.
   const idleSec = currentIdleSec();
   const fiveHour = projectLimit(
     'fiveHour',
@@ -693,20 +704,23 @@ function pushUsageUpdate() {
     idleSec
   );
 
-  const binding = bindingRisk(
-    // 아직 시작하지 않은 5시간 구간은 pct가 0으로 채워져 있을 뿐 실제 신호가 아니라서 제외한다.
-    paceRiskOf(
-      percents.fiveHourPending ? null : percents.fiveHourPct,
-      percents.fiveHourPacePct,
-      fiveHour.projectedPct
-    ),
-    paceRiskOf(percents.weeklyPct, percents.weeklyPacePct, weekly.projectedPct)
+  // 아직 시작하지 않은 5시간 구간은 pct가 0으로 채워져 있을 뿐 실제 신호가 아니라서 제외한다.
+  const fiveHourRisk = paceRiskOf(
+    percents.fiveHourPending ? null : percents.fiveHourPct,
+    percents.fiveHourPacePct,
+    fiveHour.projectedPct
   );
+  const weeklyRisk = paceRiskOf(percents.weeklyPct, percents.weeklyPacePct, weekly.projectedPct);
+  // 두 한도의 상태를 각 게이지 옆에 따로 보여주므로 "먼저 막는 쪽"은 더 이상 표시를 독점하지 않는다.
+  // 다만 동률일 때(둘 다 주의/둘 다 위험) 어느 쪽을 먼저 봐야 하는지는 여전히 정보라서, 그 행의
+  // 라벨만 밝게 하는 데 쓴다.
+  const binding = bindingRisk(fiveHourRisk, weeklyRisk);
 
   mainWindow.webContents.send('usage-update', {
     ...percents,
-    paceRisk: binding ? binding.risk : null,
-    paceRiskLimit: binding ? binding.limit : null,
+    fiveHourRisk,
+    weeklyRisk,
+    bindingLimit: binding ? binding.limit : null,
   });
 }
 
