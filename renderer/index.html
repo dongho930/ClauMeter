@@ -37,8 +37,8 @@
      클릭이 위젯에 닿는다. */
   .pace-states { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 10px; }
   .pace-state { display: flex; align-items: center; gap: 4px; min-width: 0; }
-  /* 한국어/일본어는 넉넉하지만 독일어("Diese Woche")나 폴란드어("W tym tygodniu")는 자리를
-     넘긴다. 그때는 라벨만 줄어들고 점과 버튼은 그대로 남게 한다. */
+  /* 라벨은 제목 줄 전용 짧은 문자열(paceFiveHourLabel/paceWeekLabel)이라 12개 언어 모두 들어가지만,
+     혹시 넘치더라도 라벨만 줄어들고 점과 버튼은 그대로 남게 한다. */
   .pace-state-label {
     color: #9aa0a6;
     overflow: hidden;

@@ -75,8 +75,8 @@ function setPaceState(stateEl, labelEl, dotEl, label, risk) {
 
 function setPaceStates(data) {
   if (!STR) return;
-  setPaceState(fiveHourState, fiveHourStateLabel, fiveHourStateDot, STR.fiveHourLabel, data.fiveHourRisk);
-  setPaceState(weeklyState, weeklyStateLabel, weeklyStateDot, STR.thisWeekLabel, data.weeklyRisk);
+  setPaceState(fiveHourState, fiveHourStateLabel, fiveHourStateDot, STR.paceFiveHourLabel, data.fiveHourRisk);
+  setPaceState(weeklyState, weeklyStateLabel, weeklyStateDot, STR.paceWeekLabel, data.weeklyRisk);
   // 양쪽 다 보여줄 게 없으면 묶음째 숨겨서 헤더에 빈 자리가 남지 않게 한다.
   paceStates.hidden = fiveHourState.hidden && weeklyState.hidden;
 }

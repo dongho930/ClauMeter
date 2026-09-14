@@ -47,6 +47,11 @@ const ROWS = [
   ['widgetWindowTitle', '클로미터', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter', 'ClauMeter'],
   ['fiveHourLabel', '5시간', '5-hour', '5 horas', '5 heures', '5 Stunden', '5 horas', '5時間', '5小时', '5 часов', '5 ore', '5 uur', '5 godzin'],
   ['thisWeekLabel', '이번 주', 'This week', 'Esta semana', 'Cette semaine', 'Diese Woche', 'Esta semana', '今週', '本周', 'На этой неделе', 'Questa settimana', 'Deze week', 'W tym tygodniu'],
+  // 제목 줄 상태 표시 전용 짧은 라벨. 제목 줄은 340px 한 줄에 제목/버튼/갱신 시각과 함께 들어가서, 게이지 행
+  // 라벨을 그대로 쓰면 독일어/러시아어/이탈리아어/네덜란드어/폴란드어에서 잘렸다(갱신 시각까지 두 줄로 밀림).
+  // 잘리지 않는 언어는 게이지 행 라벨과 같게 두고, 잘리는 언어만 줄였다.
+  ['paceFiveHourLabel', '5시간', '5-hour', '5 horas', '5 heures', '5 Std.', '5 horas', '5時間', '5小时', '5 ч', '5 h', '5 uur', '5 godz.'],
+  ['paceWeekLabel', '이번 주', 'This week', 'Esta semana', 'Cette semaine', 'Woche', 'Esta semana', '今週', '本周', 'Нед.', 'Sett.', 'Week', 'Tydzień'],
   ['noData', '데이터 없음', 'No data', 'Sin datos', 'Aucune donnée', 'Keine Daten', 'Sem dados', 'データなし', '暂无数据', 'Нет данных', 'Nessun dato', 'Geen gegevens', 'Brak danych'],
   ['resetPending', '메시지를 보내면 시작됩니다', 'Starts when you send a message', 'Comienza al enviar un mensaje', "Démarre à l'envoi d'un message", 'Beginnt mit der ersten Nachricht', 'Começa ao enviar uma mensagem', 'メッセージを送信すると開始されます', '发送消息后开始计时', 'Начнётся при отправке сообщения', "Inizia all'invio di un messaggio", 'Begint zodra je een bericht verstuurt', 'Rozpocznie się po wysłaniu wiadomości'],
   ['resetIn', '{h}시간 {m}분 후 초기화', 'Resets in {h}h {m}m', 'Se reinicia en {h}h {m}m', 'Réinitialisation dans {h} h {m} min', 'Zurücksetzen in {h} Std {m} Min', 'Reinicia em {h}h {m}min', '{h}時間{m}分後にリセット', '{h}小时{m}分钟后重置', 'Сброс через {h} ч {m} мин', 'Si azzera tra {h}h {m}min', 'Reset over {h}u {m}min', 'Reset za {h}g {m}min'],
