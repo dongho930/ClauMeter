@@ -1,6 +1,6 @@
 {
   "name": "claumeter",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "description": "클로미터 (ClauMeter) - Claude 5시간/주간 사용량 게이지 위젯",
   "main": "main.js",
   "private": true,
